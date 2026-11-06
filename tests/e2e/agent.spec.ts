@@ -104,7 +104,7 @@ test("study plan shows approval card and nothing is saved yet", async ({ page })
   await expect(slip(page).getByText("Save a study plan")).toBeVisible();
   await expect(slip(page).getByText("Semester revision plan")).toBeVisible();
   await expect(slip(page).getByText("Revise algorithms")).toBeVisible();
-  await expect(slip(page).getByText("1 Dec 2026")).toBeVisible();
+  await expect(slip(page).locator("time")).toHaveCount(3);
   await expect(page.getByRole("list", { name: "What the assistant did" }).getByText("create_study_plan")).toBeVisible();
   expect(await planCount(id)).toBe(0);
 });
@@ -150,16 +150,21 @@ test("reject marks card rejected and saves nothing", async ({ page }) => {
   expect(await planCount(id)).toBe(0);
 });
 
-test("a tool that really fails shows Failed with a plain reason", async ({ page }) => {
+test("a plan whose date passed before approval shows Failed with a plain reason", async ({ page }) => {
   const id = await signUp(page);
-  await ask(page, "unsaveable plan");
+  await askForPlan(page);
+  const { error } = await adminClient()
+    .from("agent_pending_actions")
+    .update({ input: { title: "Old plan", items: [{ due_on: "2020-01-01", task: "Too late" }] } })
+    .eq("student_id", id);
+  if (error) throw error;
   const approve = page.waitForResponse("**/approve");
   await slip(page).getByRole("button", { name: "Approve" }).click();
   const body = await (await approve).text();
   expect(body).toContain('"status":"failed"');
-  expect(body).not.toMatch(/Could not save|date\/time|out of range/);
+  expect(body).not.toMatch(/Invalid input|due_on/);
   await expect(slip(page).getByText("Failed", { exact: true })).toBeVisible();
-  await expect(slip(page).getByText("This could not be saved.", { exact: false })).toBeVisible();
+  await expect(slip(page).getByText("This could not be saved. Ask again to start over.")).toBeVisible();
   await expect(slip(page).getByRole("button", { name: "Approve" })).toHaveCount(0);
   expect(await planCount(id)).toBe(0);
 });
@@ -194,6 +199,25 @@ test("a model failure response holds no raw error text", async ({ page }) => {
   const res = await page.request.post("/api/agent/runs", { data: { message: "please fail" } });
   expect(res.status()).toBe(502);
   expect(await res.text()).not.toContain("Scripted model failure");
+});
+
+test("the fresh start hint stays visible after a reply", async ({ page }) => {
+  await signUp(page);
+  const hint = page.getByText("Each message starts fresh");
+  await expect(hint).toBeVisible();
+  await ask(page, "hello");
+  await expect(conversation(page).getByText("Scripted reply.")).toBeVisible();
+  await expect(hint).toBeVisible();
+});
+
+test("a role with no tools sees no panel", async ({ page }) => {
+  const id = await signUp(page);
+  await expect(page.getByRole("region", { name: "CampusCircle assistant" })).toBeVisible();
+  const { error } = await adminClient().from("profiles").update({ role: "authority" }).eq("id", id);
+  if (error) throw error;
+  await page.reload();
+  await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "CampusCircle assistant" })).toHaveCount(0);
 });
 
 test("empty message and message over 4000 characters are refused", async ({ page }) => {

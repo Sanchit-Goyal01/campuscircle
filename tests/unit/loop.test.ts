@@ -198,6 +198,24 @@ describe('runAgent', () => {
     spy.mockRestore();
   });
 
+  test('the system prompt gives the date, the stateless rule and the plain text rule', async () => {
+    const { db } = makeDb();
+    let system = '';
+    const model: ModelClient = {
+      async next(args) {
+        system = args.system;
+        return { text: 'ok', toolCalls: [] };
+      },
+    };
+    const now = () => new Date('2026-11-06T19:00:00Z');
+    await runAgent({ message: 'm', tools: [], ctx: ctxFor(db), model, now });
+    expect(system).toContain('Today is 2026-11-07');
+    expect(system).toContain('Asia/Kolkata');
+    expect(system).toContain('Each message starts fresh');
+    expect(system).toContain('Do not ask clarifying questions');
+    expect(system).toContain('no markdown');
+  });
+
   test('tools filtered by role before reaching model', async () => {
     const { db } = makeDb();
     const auth = readTool({ name: 'auth_only', roles: ['authority'] });

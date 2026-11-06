@@ -1,3 +1,4 @@
+import { addDays, agentToday } from '../lib/today';
 import type { AgentMessage, ModelClient, ModelTurn } from './types';
 
 const firstUserMessage = (messages: AgentMessage[]) => {
@@ -12,7 +13,7 @@ const call = (name: string, input: unknown): ModelTurn => ({
 });
 
 /** Test double for end-to-end runs. Picks its turn by keyword in the first user message. */
-export function createScriptedModel(): ModelClient {
+export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {
     async next({ messages }) {
       const message = firstUserMessage(messages);
@@ -27,20 +28,14 @@ export function createScriptedModel(): ModelClient {
         );
       }
 
-      // Passes input validation but Postgres has no year 0, so saving really fails.
-      if (message.includes('unsaveable')) {
-        return call('create_study_plan', {
-          title: 'Unsaveable plan',
-          items: [{ due_on: '0000-01-01', task: 'Cannot be stored' }],
-        });
-      }
       if (message.includes('plan')) {
+        const today = agentToday(now());
         return call('create_study_plan', {
           title: 'Semester revision plan',
           items: [
-            { due_on: '2026-12-01', task: 'Revise algorithms' },
-            { due_on: '2026-12-02', task: 'Practise past papers' },
-            { due_on: '2026-12-03', task: 'Take a mock test' },
+            { due_on: addDays(today, 1), task: 'Revise algorithms' },
+            { due_on: addDays(today, 2), task: 'Practise past papers' },
+            { due_on: addDays(today, 3), task: 'Take a mock test' },
           ],
         });
       }

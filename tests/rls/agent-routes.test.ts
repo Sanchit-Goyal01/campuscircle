@@ -17,11 +17,13 @@ vi.mock("@/agent/model", async (importActual) => {
 import { POST as approve } from "../../src/app/api/agent/actions/[id]/approve/route";
 import { POST as runs } from "../../src/app/api/agent/runs/route";
 import { executeToolCall } from "../../src/agent/executor";
+import { addDays, agentToday } from "../../src/lib/today";
 import { allTools } from "../../src/modules";
 
 const tag = Math.random().toString(36).slice(2, 8);
 const dom = `ar-${tag}.edu`;
 let college: string;
+let otherCollege: string;
 let student: { id: string; client: SupabaseClient };
 
 const ctxWith = (db: SupabaseClient): ToolContext => ({
@@ -31,8 +33,7 @@ const ctxWith = (db: SupabaseClient): ToolContext => ({
   role: "student",
 });
 
-const goodPlan = { title: "Exam prep", items: [{ due_on: "2026-12-01", task: "Revise" }] };
-const badPlan = { title: "Exam prep", items: [{ due_on: "0000-01-01", task: "Revise" }] };
+const goodPlan = { title: "Exam prep", items: [{ due_on: addDays(agentToday(), 1), task: "Revise" }] };
 
 async function pendingAction(input: unknown) {
   const { data, error } = await student.client
@@ -75,6 +76,7 @@ async function planCount() {
 
 beforeAll(async () => {
   college = await createCollege(`Routes College ${tag}`, dom);
+  otherCollege = await createCollege(`Other College ${tag}`, `other-${dom}`);
   student = await createStudent(`s-${tag}@${dom}`);
 });
 
@@ -133,18 +135,20 @@ describe("approve", () => {
   });
 
   test("a real database failure is failed with a plain reason; the row keeps the real error", async () => {
-    const id = await pendingAction(badPlan);
+    const id = await pendingAction(goodPlan);
     const before = await planCount();
+    // Postgres refuses this insert: the row-level policy requires the student's own college.
+    session.ctx = { ...ctxWith(student.client), collegeId: otherCollege };
 
     const res = await callApprove(id);
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(text).not.toMatch(/Could not save plan items|date\/time|out of range/);
+    expect(text).not.toMatch(/Could not create plan|row-level security/);
     expect(JSON.parse(text).status).toBe("failed");
 
     const row = await actionRow(id);
     expect(row.status).toBe("failed");
-    expect(JSON.stringify(row.result)).toContain("Could not save plan items");
+    expect(JSON.stringify(row.result)).toContain("row-level security");
     expect(await planCount()).toBe(before);
   });
 });

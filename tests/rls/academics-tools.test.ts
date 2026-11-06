@@ -5,6 +5,7 @@ import { adminClient, createCollege, createStudent } from "../helpers/supabase";
 import { executeToolCall, runApprovedAction } from "../../src/agent/executor";
 import { runAgent } from "../../src/agent/loop";
 import type { AgentTool, ModelClient, ModelTurn, ToolContext } from "../../src/agent/types";
+import { addDays, agentToday } from "../../src/lib/today";
 import { allTools } from "../../src/modules";
 
 const run = Math.random().toString(36).slice(2, 8);
@@ -41,11 +42,14 @@ async function planCount(s: S) {
   return count!;
 }
 
+const day1 = addDays(agentToday(), 1);
+const day2 = addDays(agentToday(), 2);
+
 const validPlan = {
   title: "Exam prep",
   items: [
-    { due_on: "2026-12-01", task: "Revise algorithms" },
-    { due_on: "2026-12-02", task: "Mock test" },
+    { due_on: day1, task: "Revise algorithms" },
+    { due_on: day2, task: "Mock test" },
   ],
 };
 
@@ -136,14 +140,14 @@ describe("create_study_plan", () => {
     expect(plan).toEqual({ title: "Exam prep", student_id: A.id, college_id: college });
     const { data: items } = await A.client.from("study_plan_items").select("due_on, task, done, college_id").eq("plan_id", planId).order("due_on");
     expect(items).toEqual([
-      { due_on: "2026-12-01", task: "Revise algorithms", done: false, college_id: college },
-      { due_on: "2026-12-02", task: "Mock test", done: false, college_id: college },
+      { due_on: day1, task: "Revise algorithms", done: false, college_id: college },
+      { due_on: day2, task: "Mock test", done: false, college_id: college },
     ]);
   });
 
   test("input validation", () => {
     const p = tool("create_study_plan").input;
-    const item = { due_on: "2026-12-01", task: "x" };
+    const item = { due_on: day1, task: "x" };
     expect(p.safeParse(validPlan).success).toBe(true);
     expect(p.safeParse({ title: "  ", items: [item] }).success).toBe(false);
     expect(p.safeParse({ title: "t", items: [] }).success).toBe(false);
@@ -151,7 +155,7 @@ describe("create_study_plan", () => {
     expect(p.safeParse({ title: "t", items: Array(60).fill(item) }).success).toBe(true);
     expect(p.safeParse({ title: "t", items: [{ due_on: "2026-02-30", task: "x" }] }).success).toBe(false);
     expect(p.safeParse({ title: "t", items: [{ due_on: "2026-2-3", task: "x" }] }).success).toBe(false);
-    expect(p.safeParse({ title: "t", items: [{ due_on: "2026-12-01", task: " " }] }).success).toBe(false);
+    expect(p.safeParse({ title: "t", items: [{ due_on: day1, task: " " }] }).success).toBe(false);
     expect(p.safeParse({ ...validPlan, student_id: B.id }).success).toBe(false);
     expect(p.safeParse({ ...validPlan, college_id: "x" }).success).toBe(false);
     expect(p.safeParse({ title: "t", items: [{ ...item, college_id: "x" }] }).success).toBe(false);

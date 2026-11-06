@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool } from '../../agent/types';
+import { agentToday } from '../../lib/today';
 
 const realDate = z
   .string()
@@ -41,41 +42,59 @@ export const getMarks: AgentTool<z.infer<typeof getMarksInput>> = {
   },
 };
 
-const planInput = z.strictObject({
-  title: nonEmpty,
-  items: z.array(z.strictObject({ due_on: realDate, task: nonEmpty })).min(1).max(60),
-});
+const planInput = (today: () => string) =>
+  z.strictObject({
+    title: nonEmpty,
+    items: z
+      .array(
+        z.strictObject({
+          due_on: realDate.refine((s) => s >= today(), {
+            error: () => `due_on must be today (${today()}) or later`,
+          }),
+          task: nonEmpty,
+        }),
+      )
+      .min(1)
+      .max(60),
+  });
 
-export const createStudyPlan: AgentTool<z.infer<typeof planInput>> = {
-  name: 'create_study_plan',
-  description:
-    'Create a study plan with a title and dated tasks for the signed-in student. Needs student approval.',
-  kind: 'write',
-  roles: ['student', 'society_admin'],
-  input: planInput,
-  async run(input, ctx) {
-    const { data: plan, error } = await ctx.db
-      .from('study_plans')
-      .insert({ student_id: ctx.userId, college_id: ctx.collegeId, title: input.title })
-      .select('id')
-      .single();
-    if (error || !plan) throw new Error(`Could not create plan: ${error?.message ?? 'no row returned'}`);
-    const planId = plan.id as string;
+/** `today` is checked at each parse, so approval also refuses a date that has since passed. */
+export function createStudyPlanTool(
+  today: () => string = () => agentToday(),
+): AgentTool<z.infer<ReturnType<typeof planInput>>> {
+  return {
+    name: 'create_study_plan',
+    description:
+      'Create a study plan with a title and dated tasks for the signed-in student. Needs student approval.',
+    kind: 'write',
+    roles: ['student', 'society_admin'],
+    input: planInput(today),
+    async run(input, ctx) {
+      const { data: plan, error } = await ctx.db
+        .from('study_plans')
+        .insert({ student_id: ctx.userId, college_id: ctx.collegeId, title: input.title })
+        .select('id')
+        .single();
+      if (error || !plan) throw new Error(`Could not create plan: ${error?.message ?? 'no row returned'}`);
+      const planId = plan.id as string;
 
-    const { error: itemsError } = await ctx.db.from('study_plan_items').insert(
-      input.items.map((i) => ({
-        plan_id: planId,
-        college_id: ctx.collegeId,
-        due_on: i.due_on,
-        task: i.task,
-      })),
-    );
-    if (itemsError) {
-      // No transaction: remove the plan so no partial plan is left behind.
-      const { error: delError } = await ctx.db.from('study_plans').delete().eq('id', planId);
-      const extra = delError ? ` (cleanup also failed: ${delError.message})` : '';
-      throw new Error(`Could not save plan items: ${itemsError.message}${extra}`);
-    }
-    return { planId };
-  },
-};
+      const { error: itemsError } = await ctx.db.from('study_plan_items').insert(
+        input.items.map((i) => ({
+          plan_id: planId,
+          college_id: ctx.collegeId,
+          due_on: i.due_on,
+          task: i.task,
+        })),
+      );
+      if (itemsError) {
+        // No transaction: remove the plan so no partial plan is left behind.
+        const { error: delError } = await ctx.db.from('study_plans').delete().eq('id', planId);
+        const extra = delError ? ` (cleanup also failed: ${delError.message})` : '';
+        throw new Error(`Could not save plan items: ${itemsError.message}${extra}`);
+      }
+      return { planId };
+    },
+  };
+}
+
+export const createStudyPlan = createStudyPlanTool();

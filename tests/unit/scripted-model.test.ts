@@ -19,10 +19,11 @@ describe("scripted model", () => {
     expect(createStudyPlan.input.safeParse(turn.toolCalls[0].input).success).toBe(true);
   });
 
-  test('"unsaveable" sends input that passes validation but a date Postgres refuses', async () => {
-    const turn = await next([user("an unsaveable plan")]);
-    expect(createStudyPlan.input.safeParse(turn.toolCalls[0].input).success).toBe(true);
-    expect(JSON.stringify(turn.toolCalls[0].input)).toContain("0000-01-01");
+  test('"plan" dates start the day after today', async () => {
+    const model = createScriptedModel(() => new Date("2026-11-06T19:00:00Z"));
+    const turn = await model.next({ system: "", tools: [], messages: [user("a plan")] });
+    const { items } = turn.toolCalls[0].input as { items: { due_on: string }[] };
+    expect(items.map((i) => i.due_on)).toEqual(["2026-11-08", "2026-11-09", "2026-11-10"]);
   });
 
   test('"fail" throws', async () => {

@@ -69,7 +69,7 @@ body {
 }
 
 .notebook-hint {
-  margin-top: 0.5rem;
+  margin-top: 0.125rem;
   color: var(--color-ink-soft);
   font-size: 0.9375rem;
 }

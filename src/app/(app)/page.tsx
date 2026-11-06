@@ -1,5 +1,6 @@
 import { AgentPanel } from "@/agent/ui/AgentPanel";
 import { getProfile } from "@/lib/supabase/server";
+import { allTools } from "@/modules";
 
 export default async function HomePage() {
   const me = await getProfile();
@@ -10,6 +11,8 @@ export default async function HomePage() {
     .eq("id", me.profile.college_id)
     .maybeSingle();
 
+  const hasTools = allTools.some((tool) => tool.roles.includes(me.profile.role));
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <header>
@@ -19,7 +22,7 @@ export default async function HomePage() {
         </p>
       </header>
       {/* Keyed so one student's conversation can never show for another in a hidden route. */}
-      <AgentPanel key={me.userId} />
+      {hasTools && <AgentPanel key={me.userId} />}
     </div>
   );
 }

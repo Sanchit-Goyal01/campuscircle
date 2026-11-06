@@ -114,7 +114,6 @@ export function AgentPanel() {
             Ask about your marks, or ask for a revision plan with dates. Anything that would change your
             account waits here for your approval.
           </p>
-          <p className="notebook-hint">Each message starts fresh, so include everything I need in it.</p>
         </div>
       ) : (
         <ol className="turns" aria-label="Conversation">
@@ -158,13 +157,16 @@ export function AgentPanel() {
         <label htmlFor="agent-message" className="composer-label">
           Ask CampusCircle
         </label>
+        <p id="agent-message-hint" className="notebook-hint">
+          Each message starts fresh, so include everything I need in it.
+        </p>
         <textarea
           id="agent-message"
           className="composer-input"
           rows={3}
           value={draft}
           aria-invalid={formError !== ''}
-          aria-describedby={formError ? 'agent-message-error' : undefined}
+          aria-describedby={formError ? 'agent-message-hint agent-message-error' : 'agent-message-hint'}
           onChange={(e) => {
             setDraft(e.target.value);
             setFormError('');
