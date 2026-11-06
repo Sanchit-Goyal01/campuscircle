@@ -75,12 +75,23 @@ export async function runApprovedAction(
   const action = (Array.isArray(row) ? row[0] : row) as { tool_name: string; input: unknown } | undefined;
   if (!action) return { status: 'error', message: 'Action could not be approved' };
 
-  const finish = async (status: 'done' | 'failed', result: unknown) => {
-    await ctx.db.rpc('finish_pending_action', {
-      p_id: actionId,
-      p_status: status,
-      p_result: result,
-    });
+  // Returns an error message if the result could not be recorded.
+  const finish = async (status: 'done' | 'failed', result: unknown): Promise<string | null> => {
+    try {
+      const { error: finishError } = await ctx.db.rpc('finish_pending_action', {
+        p_id: actionId,
+        p_status: status,
+        p_result: result ?? null,
+      });
+      if (finishError) {
+        console.error('finish_pending_action failed', actionId, finishError);
+        return finishError.message ?? 'unknown error';
+      }
+      return null;
+    } catch (e) {
+      console.error('finish_pending_action threw', actionId, e);
+      return errMsg(e);
+    }
   };
 
   const found = resolveTool(action.tool_name, tools, ctx);
@@ -97,13 +108,20 @@ export async function runApprovedAction(
     return { status: 'error', message };
   }
 
+  let result: unknown;
   try {
-    const result = await tool.run(parsed.data, ctx);
-    await finish('done', result);
-    return { status: 'ok', result };
+    result = await tool.run(parsed.data, ctx);
   } catch (e) {
     const message = errMsg(e);
     await finish('failed', { error: message });
     return { status: 'error', message };
   }
+  const recordError = await finish('done', result);
+  if (recordError) {
+    return {
+      status: 'error',
+      message: `Action ${actionId} ran but its result was not recorded: ${recordError}`,
+    };
+  }
+  return { status: 'ok', result };
 }

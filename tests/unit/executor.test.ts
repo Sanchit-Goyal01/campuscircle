@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { executeToolCall, runApprovedAction } from '@/agent/executor';
 import type { AgentTool, Role, ToolContext } from '@/agent/types';
 
-function makeDb(opts: { approveRow?: any; approveError?: any } = {}) {
+function makeDb(opts: { approveRow?: any; approveError?: any; finishError?: any } = {}) {
   const insert = vi.fn();
   const rpc = vi.fn(async (name: string, _args: any) => {
     if (name === 'approve_pending_action') {
@@ -12,6 +12,9 @@ function makeDb(opts: { approveRow?: any; approveError?: any } = {}) {
         data: opts.approveRow ?? null,
         error: null,
       };
+    }
+    if (name === 'finish_pending_action' && opts.finishError) {
+      return { data: null, error: opts.finishError };
     }
     return { data: null, error: null };
   });
@@ -157,5 +160,32 @@ describe('runApprovedAction', () => {
     const out = await runApprovedAction('a1', [t], ctxFor(db));
     expect(out.status).toBe('error');
     expect(t.run).not.toHaveBeenCalled();
+  });
+
+  test('void tool result is recorded as null', async () => {
+    const { db, rpc } = makeDb({ approveRow: row });
+    const t = tool({ kind: 'write', run: vi.fn(async () => undefined) });
+    const out = await runApprovedAction('a1', [t], ctxFor(db));
+    expect(out).toEqual({ status: 'ok', result: undefined });
+    expect(rpc).toHaveBeenCalledWith('finish_pending_action', {
+      p_id: 'a1',
+      p_status: 'done',
+      p_result: null,
+    });
+  });
+
+  test('finish failure after success gives distinct error and is not re-finished as failed', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, rpc } = makeDb({ approveRow: row, finishError: { message: 'rpc down' } });
+    const t = tool({ kind: 'write' });
+    const out = await runApprovedAction('a1', [t], ctxFor(db));
+    expect(out.status).toBe('error');
+    expect((out as any).message).toContain('ran but its result was not recorded');
+    expect(t.run).toHaveBeenCalledOnce();
+    const finishCalls = rpc.mock.calls.filter((c) => c[0] === 'finish_pending_action');
+    expect(finishCalls).toHaveLength(1);
+    expect(finishCalls[0][1].p_status).toBe('done');
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
