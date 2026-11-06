@@ -23,3 +23,16 @@ export type ToolOutcome =
   | { status: 'ok'; result: unknown }
   | { status: 'pending_approval'; actionId: string }
   | { status: 'error'; message: string };
+
+export type ToolSpec = { name: string; description: string; input_schema: Record<string, unknown> };
+
+export type AgentMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; text: string; toolCalls: { id: string; name: string; input: unknown }[] }
+  | { role: 'tool'; results: { id: string; output: string; isError: boolean }[] };
+
+export type ModelTurn = { text: string; toolCalls: { id: string; name: string; input: unknown }[] };
+
+export interface ModelClient {
+  next(args: { system: string; messages: AgentMessage[]; tools: ToolSpec[] }): Promise<ModelTurn>;
+}
