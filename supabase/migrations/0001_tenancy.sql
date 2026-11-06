@@ -88,6 +88,9 @@ begin
 end;
 $$;
 
+-- Only ever fired by the triggers below; nobody calls it directly.
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
@@ -102,8 +105,11 @@ alter table public.colleges enable row level security;
 alter table public.departments enable row level security;
 alter table public.profiles enable row level security;
 
+-- Supabase grants broad default privileges; strip them, then grant the minimum.
+-- anon gets nothing: sign-up goes through auth and the security definer trigger.
+revoke all on public.colleges, public.departments, public.profiles from anon, authenticated;
+grant select on public.colleges, public.departments, public.profiles to authenticated;
 -- Column grants (not RLS) stop role / college_id changes.
-revoke update on public.profiles from authenticated, anon;
 grant update (full_name, bio, skills) on public.profiles to authenticated;
 
 create policy colleges_select on public.colleges

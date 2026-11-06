@@ -19,6 +19,20 @@ beforeAll(async () => {
 });
 
 describe("tenancy", () => {
+  test.each(["profiles", "colleges", "departments"])("anon cannot read %s", async (table) => {
+    const { data, error } = await anonClient().from(table).select("id");
+    expect(data).toBeNull();
+    expect(error?.code).toBe("42501");
+  });
+
+  test("a student cannot insert or delete tenancy rows", async () => {
+    const s = await createStudent(`w1-${run}@${domA}`);
+    const del = await s.client.from("profiles").delete().eq("id", s.id);
+    expect(del.error?.code).toBe("42501");
+    const ins = await s.client.from("colleges").insert({ name: "Fake", email_domain: `fake-${run}.edu` });
+    expect(ins.error?.code).toBe("42501");
+  });
+
   test("student reads profiles in own college only", async () => {
     const a = await createStudent(`a1-${run}@${domA}`);
     const a2 = await createStudent(`a2-${run}@${domA}`);
