@@ -53,7 +53,7 @@ export async function runAgent(args: {
 
   const { data: run, error: runErr } = await ctx.db
     .from('agent_runs')
-    .insert({ student_id: ctx.userId, college_id: ctx.collegeId, message, status: 'running' })
+    .insert({ student_id: ctx.userId, college_id: ctx.collegeId, message })
     .select('id')
     .single();
   if (runErr || !run) throw new Error(`Could not create agent run: ${runErr?.message ?? 'no row returned'}`);

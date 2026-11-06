@@ -10,6 +10,9 @@ let B: { id: string; client: SupabaseClient };
 let runA: string;
 let runB: string;
 let subjectId: string;
+let collegeX: string;
+let X: { id: string; client: SupabaseClient };
+let subjectX: string;
 
 async function pendingFor(s: typeof A, runId: string) {
   const { data, error } = await s.client
@@ -40,6 +43,8 @@ beforeAll(async () => {
   college = await createCollege(`Agent College ${run}`, dom);
   A = await createStudent(`a-${run}@${dom}`);
   B = await createStudent(`b-${run}@${dom}`);
+  collegeX = await createCollege(`Other College ${run}`, `x-${run}.edu`);
+  X = await createStudent(`x-${run}@x-${run}.edu`);
   const admin = adminClient();
   const mk = async (s: typeof A) => {
     const { data, error } = await admin
@@ -63,6 +68,13 @@ beforeAll(async () => {
     .single();
   expect(error).toBeNull();
   subjectId = subj!.id;
+  const sx = await admin
+    .from("subjects")
+    .insert({ college_id: collegeX, code: `CX${run}`, name: "Other", credits: 3 })
+    .select("id")
+    .single();
+  expect(sx.error).toBeNull();
+  subjectX = sx.data!.id;
   for (const s of [A, B]) {
     const r = await admin.from("subject_results").insert({
       student_id: s.id,
@@ -232,5 +244,61 @@ describe("academics", () => {
     expect(seen.data).toEqual([]);
     const mine = await A.client.from("study_plan_items").select("id");
     expect(mine.data!.length).toBe(1);
+  });
+});
+
+describe("agent run creation and cross-college isolation", () => {
+  test("the exact payload the loop sends creates a run with status running", async () => {
+    const { data, error } = await A.client
+      .from("agent_runs")
+      .insert({ student_id: A.id, college_id: college, message: "hello" })
+      .select("id")
+      .single();
+    expect(error).toBeNull();
+    const { data: row } = await adminClient().from("agent_runs").select("status").eq("id", data!.id).single();
+    expect(row!.status).toBe("running");
+  });
+
+  test("student cannot forge the initial run status", async () => {
+    const { error } = await A.client
+      .from("agent_runs")
+      .insert({ student_id: A.id, college_id: college, message: "m", status: "completed" });
+    expect(error).not.toBeNull();
+  });
+
+  test("forged college_id on run insert is rejected", async () => {
+    const { error } = await A.client
+      .from("agent_runs")
+      .insert({ student_id: A.id, college_id: collegeX, message: "m" });
+    expect(error).not.toBeNull();
+  });
+
+  test("student cannot read another college's subjects", async () => {
+    const { data } = await A.client.from("subjects").select("id");
+    const ids = data!.map((s) => s.id);
+    expect(ids).toContain(subjectId);
+    expect(ids).not.toContain(subjectX);
+  });
+
+  test("subject_results insert with another college's subject is rejected", async () => {
+    const { error } = await A.client.from("subject_results").insert({
+      student_id: A.id, college_id: college, subject_id: subjectX, semester: 3, marks: 1, grade_points: 1,
+    });
+    expect(error).not.toBeNull();
+  });
+
+  test("pending action with forged student_id is rejected", async () => {
+    const { error } = await A.client.from("agent_pending_actions").insert({
+      run_id: runA, student_id: B.id, college_id: college, tool_name: "x", input: {},
+    });
+    expect(error).not.toBeNull();
+  });
+
+  test("other-college student cannot see or approve this college's actions", async () => {
+    const id = await pendingFor(A, runA);
+    const seen = await X.client.from("agent_pending_actions").select("id").eq("id", id);
+    expect(seen.data).toEqual([]);
+    const r = await X.client.rpc("approve_pending_action", { p_id: id });
+    expect(r.error?.message).toContain("invalid_action_state");
   });
 });
