@@ -31,6 +31,8 @@ export async function proxy(request: NextRequest) {
   const isAuthPath = AUTH_PATHS.includes(path);
   // API routes answer for themselves with 401 JSON; a redirect would hide that from fetch.
   const isApiPath = path.startsWith("/api/");
+  // Opened from an email by someone who has no session yet.
+  const isConfirmPath = path === "/auth/confirm";
 
   const redirectTo = (to: string) => {
     const redirect = NextResponse.redirect(new URL(to, request.url));
@@ -42,7 +44,7 @@ export async function proxy(request: NextRequest) {
     return redirect;
   };
 
-  if (!signedIn && !isAuthPath && !isApiPath) return redirectTo("/sign-in");
+  if (!signedIn && !isAuthPath && !isApiPath && !isConfirmPath) return redirectTo("/sign-in");
   if (signedIn && isAuthPath) return redirectTo("/");
   return response;
 }

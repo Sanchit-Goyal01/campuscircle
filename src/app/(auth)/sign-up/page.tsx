@@ -21,7 +21,10 @@ export default function SignUpPage() {
       const { data, error } = await getBrowserClient().auth.signUp({
         email: String(form.get("email")).trim(),
         password: String(form.get("password")),
-        options: { data: { full_name: String(form.get("full_name")).trim() } },
+        options: {
+          data: { full_name: String(form.get("full_name")).trim() },
+          emailRedirectTo: `${window.location.origin}/auth/confirm`,
+        },
       });
       if (error) {
         setError(signUpErrorMessage(error));

@@ -465,12 +465,17 @@ The user creates the hosted accounts and enters all keys. An agent does not do t
 
 - [ ] **Step 1: User creates the hosted Supabase project and Vercel project**
 
-Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`, `AGENT_MODEL`, `CLASSIFIER_MODEL`, and `AGENT_DAILY_RUN_LIMIT` in Vercel. Do not set `SUPABASE_SERVICE_ROLE_KEY` or `AGENT_TEST_MODEL` there.
+Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `ANTHROPIC_API_KEY`, `AGENT_MODEL`, `CLASSIFIER_MODEL`, `AGENT_DAILY_RUN_LIMIT`, and `AGENT_TIMEZONE` in Vercel. Do not set `SUPABASE_SERVICE_ROLE_KEY` or `AGENT_TEST_MODEL` there.
 
 - [ ] **Step 2: Apply migrations and turn on email confirmation**
 
 Run: `npx supabase link` then `npx supabase db push`
 Expected: all three migrations apply. Add the real college to `colleges`, because `seed.sql` does not run on hosted projects.
+
+In the hosted Supabase Auth settings:
+- Set Site URL to the deployed origin, and add `<deployed origin>/auth/confirm` to the redirect URLs.
+- Set up custom SMTP, because the built-in email sending is rate limited and is not for real sign-ups.
+- Set the minimum password length to 8, because `supabase/config.toml` does not apply to hosted projects.
 
 - [ ] **Step 3: Verify on the deployed URL**
 

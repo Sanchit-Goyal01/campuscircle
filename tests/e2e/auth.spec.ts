@@ -87,3 +87,40 @@ test("after sign-out the page holds no previous student data", async ({ page }) 
   expect(await page.locator('input[type="password"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([""]);
   expect(await page.content()).not.toContain(PASSWORD);
 });
+
+const CONFIRMED_NOTICE = "Your email is confirmed. Sign in to continue.";
+
+test("a failed confirmation link lands on the confirmed notice, so the query survives the proxy", async ({ page }) => {
+  await page.goto("/auth/confirm?code=bad");
+  await expect(page).toHaveURL(/\/sign-in\?confirmed=1$/);
+  await expect(page.getByText(CONFIRMED_NOTICE)).toBeVisible();
+});
+
+test("a bad token_hash lands on the confirmed notice", async ({ page }) => {
+  await page.goto("/auth/confirm?token_hash=bad&type=signup");
+  await expect(page.getByText(CONFIRMED_NOTICE)).toBeVisible();
+});
+
+test("the confirm path ignores a next param", async ({ page }) => {
+  await page.goto("/auth/confirm?code=bad&next=https://example.com/");
+  await expect(page).toHaveURL(/\/sign-in\?confirmed=1$/);
+});
+
+test("a confirm link with no code claims nothing", async ({ page }) => {
+  await page.goto("/auth/confirm");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByText(CONFIRMED_NOTICE)).toHaveCount(0);
+});
+
+test("the plain sign-in page shows no notice", async ({ page }) => {
+  await page.goto("/sign-in");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByText(CONFIRMED_NOTICE)).toHaveCount(0);
+});
+
+test("sign-up asks for the confirmation link to come back to /auth/confirm", async ({ page }) => {
+  const signUpRequest = page.waitForRequest("**/auth/v1/signup*");
+  await signUp(page, "Ada Redirect", `redirect${Date.now()}@demo-iot.edu`);
+  const url = new URL((await signUpRequest).url());
+  expect(url.searchParams.get("redirect_to")).toMatch(/\/auth\/confirm$/);
+});

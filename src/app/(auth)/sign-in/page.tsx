@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { signInErrorMessage } from "@/lib/auth-errors";
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { Field } from "../field";
+import { ConfirmedNotice } from "./confirmed-notice";
 
 export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,9 @@ export default function SignInPage() {
   return (
     <>
       <h1 className="text-2xl font-semibold">Sign in</h1>
+      <Suspense fallback={null}>
+        <ConfirmedNotice />
+      </Suspense>
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <Field label="College email" name="email" type="email" autoComplete="email" required />
         <Field label="Password" name="password" type="password" autoComplete="current-password" required />
