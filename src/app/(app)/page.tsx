@@ -1,3 +1,4 @@
+import { AgentPanel } from "@/agent/ui/AgentPanel";
 import { getProfile } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -10,11 +11,15 @@ export default async function HomePage() {
     .maybeSingle();
 
   return (
-    <div className="flex flex-col gap-2">
-      <h1 className="text-2xl font-semibold">Welcome, {me.profile.full_name || "student"}</h1>
-      <p>
-        {college?.name ?? "Your college"} · {me.profile.role.replace("_", " ")}
-      </p>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+      <header>
+        <h1 className="font-slab text-3xl font-bold">Welcome, {me.profile.full_name || "student"}</h1>
+        <p className="mt-1">
+          {college?.name ?? "Your college"}, {me.profile.role.replace("_", " ")}
+        </p>
+      </header>
+      {/* Keyed so one student's conversation can never show for another in a hidden route. */}
+      <AgentPanel key={me.userId} />
     </div>
   );
 }
