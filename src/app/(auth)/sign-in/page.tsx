@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { signInErrorMessage } from "@/lib/auth-errors";
 import { useState, type FormEvent } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { Field } from "../field";
 
 export default function SignInPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -22,11 +21,11 @@ export default function SignInPage() {
         password: String(form.get("password")),
       });
       if (error) {
-        setError("Incorrect email or password.");
+        setError(signInErrorMessage(error));
         return;
       }
-      router.replace("/");
-      router.refresh();
+      window.location.assign("/");
+      return; // keep the button disabled while navigating
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

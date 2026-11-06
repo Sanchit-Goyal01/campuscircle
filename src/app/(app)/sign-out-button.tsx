@@ -1,18 +1,16 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
 
 export function SignOutButton() {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
 
   async function signOut() {
     setPending(true);
     await getBrowserClient().auth.signOut();
-    router.replace("/sign-in");
-    router.refresh();
+    // Full navigation drops all client state, including hidden Activity routes.
+    window.location.assign("/sign-in");
   }
 
   return (

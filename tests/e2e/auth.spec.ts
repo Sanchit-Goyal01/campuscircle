@@ -42,11 +42,9 @@ test("student signs up, signs in, and sees the dashboard with their name", async
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-  // Previously visited routes can stay mounted but hidden, so scope to the visible form.
-  const form = page.locator("form:visible");
-  await form.getByLabel("College email").fill(email);
-  await form.getByLabel("Password").fill(PASSWORD);
-  await form.getByRole("button", { name: "Sign in" }).click();
+  await page.getByLabel("College email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
 });
@@ -59,4 +57,33 @@ test("sign-out returns to /sign-in", async ({ page }) => {
   await expect(page).toHaveURL(/\/sign-in$/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/sign-in$/);
+});
+
+test("sign out works again after signing back in in the same tab", async ({ page }) => {
+  const { email, name } = uniqueEmail();
+  await signUp(page, name, email);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await page.getByLabel("College email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  const signOut = page.getByRole("button", { name: "Sign out" });
+  await expect(signOut).toBeEnabled();
+  await signOut.click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+});
+
+test("after sign-out the page holds no previous student data", async ({ page }) => {
+  const { email, name } = uniqueEmail();
+  await signUp(page, name, email);
+  await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  expect(await page.content()).not.toContain(name);
+  expect(await page.locator('input[type="password"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([""]);
+  await page.goto("/sign-up");
+  expect(await page.locator('input[type="password"]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))).toEqual([""]);
+  expect(await page.content()).not.toContain(PASSWORD);
 });

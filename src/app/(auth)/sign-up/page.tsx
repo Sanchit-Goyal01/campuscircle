@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { signUpErrorMessage } from "@/lib/auth-errors";
 import { useState, type FormEvent } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { Field } from "../field";
 
 export default function SignUpPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -25,23 +24,15 @@ export default function SignUpPage() {
         options: { data: { full_name: String(form.get("full_name")).trim() } },
       });
       if (error) {
-        const unregistered =
-          /college_not_registered/i.test(error.message ?? "") || error.status === 500;
-        setError(
-          unregistered
-            ? "Your college is not registered yet."
-            : error.status === 422 || error.status === 400
-              ? "Could not create the account. Check your details and try again."
-              : "Something went wrong. Please try again.",
-        );
+        setError(signUpErrorMessage(error));
         return;
       }
       if (!data.session) {
         setNotice("Check your email to confirm your account, then sign in.");
         return;
       }
-      router.replace("/");
-      router.refresh();
+      window.location.assign("/");
+      return; // keep the button disabled while navigating
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

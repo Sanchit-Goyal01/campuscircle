@@ -12,12 +12,13 @@ export async function proxy(request: NextRequest) {
     {
       cookies: {
         getAll: () => request.cookies.getAll(),
-        setAll: (toSet) => {
+        setAll: (toSet, headers) => {
           for (const { name, value } of toSet) request.cookies.set(name, value);
           response = NextResponse.next({ request });
           for (const { name, value, options } of toSet) {
             response.cookies.set(name, value, options);
           }
+          for (const [k, v] of Object.entries(headers ?? {})) response.headers.set(k, v);
         },
       },
     },
@@ -32,6 +33,10 @@ export async function proxy(request: NextRequest) {
   const redirectTo = (to: string) => {
     const redirect = NextResponse.redirect(new URL(to, request.url));
     for (const c of response.cookies.getAll()) redirect.cookies.set(c);
+    for (const key of ["cache-control", "expires", "pragma"]) {
+      const v = response.headers.get(key);
+      if (v) redirect.headers.set(key, v);
+    }
     return redirect;
   };
 
