@@ -74,8 +74,10 @@ export async function runAgent(args: {
       .insert({ run_id: runId, college_id: ctx.collegeId, seq, kind, tool_name: toolName, payload });
     return error ? error.message : null;
   };
-  const stepFailed = (msg: string) =>
-    finish('failed', `I could not record my progress (${msg}), so I stopped. Please try again.`);
+  const stepFailed = (msg: string) => {
+    console.error('Could not record agent step', runId, msg);
+    return finish('failed', 'I could not record my progress, so I stopped. Please try again.');
+  };
 
   const messages: AgentMessage[] = [{ role: 'user', content: message }];
   const done: string[] = [];

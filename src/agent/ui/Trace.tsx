@@ -10,8 +10,6 @@ type Payload = { id?: string; outcome?: Outcome; message?: string };
 
 type Entry = { key: number; toolName: string | null; outcome: Outcome | null };
 
-const SUMMARY_LIMIT = 120;
-
 /** One entry per tool call, with its result folded in. A model failure has no call. */
 function toEntries(steps: TraceStep[]): Entry[] {
   const entries: Entry[] = [];
@@ -36,10 +34,7 @@ function summarize({ toolName, outcome }: Entry): string {
   if (!toolName) return 'Could not get an answer from the model.';
   if (!outcome) return 'Did not finish.';
   if (outcome.status === 'pending_approval') return 'Waiting for your approval.';
-  if (outcome.status === 'error') {
-    const message = outcome.message ?? 'This step failed.';
-    return message.length > SUMMARY_LIMIT ? `${message.slice(0, SUMMARY_LIMIT)}...` : message;
-  }
+  if (outcome.status === 'error') return outcome.message ?? 'This step failed.';
   if (Array.isArray(outcome.result)) {
     const n = outcome.result.length;
     return n === 0 ? 'Nothing found.' : `Found ${n} ${n === 1 ? 'record' : 'records'}.`;
@@ -50,11 +45,7 @@ function summarize({ toolName, outcome }: Entry): string {
 /** The payload to offer behind "Show details", when there is more than the summary says. */
 function details({ toolName, outcome }: Entry): string | null {
   if (!toolName || !outcome) return null;
-  if (outcome.status === 'ok') return JSON.stringify(outcome.result ?? null, null, 2);
-  if (outcome.status === 'error' && (outcome.message?.length ?? 0) > SUMMARY_LIMIT) {
-    return outcome.message ?? null;
-  }
-  return null;
+  return outcome.status === 'ok' ? JSON.stringify(outcome.result ?? null, null, 2) : null;
 }
 
 /** Tool results are untrusted, so everything here renders as plain text. */

@@ -1,4 +1,4 @@
-import type { AgentTool, ToolContext, ToolOutcome } from './types';
+import type { AgentTool, ApprovalOutcome, ToolContext, ToolOutcome } from './types';
 
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -67,13 +67,13 @@ export async function runApprovedAction(
   actionId: string,
   tools: AgentTool[],
   ctx: ToolContext,
-): Promise<ToolOutcome> {
+): Promise<ApprovalOutcome> {
   const { data: row, error } = await ctx.db.rpc('approve_pending_action', { p_id: actionId });
   if (error || !row) {
-    return { status: 'error', message: error?.message ?? 'Action could not be approved' };
+    return { status: 'not_started', message: error?.message ?? 'Action could not be approved' };
   }
   const action = (Array.isArray(row) ? row[0] : row) as { tool_name: string; input: unknown } | undefined;
-  if (!action) return { status: 'error', message: 'Action could not be approved' };
+  if (!action) return { status: 'not_started', message: 'Action could not be approved' };
 
   // Returns an error message if the result could not be recorded.
   const finish = async (status: 'done' | 'failed', result: unknown): Promise<string | null> => {
@@ -119,7 +119,8 @@ export async function runApprovedAction(
   const recordError = await finish('done', result);
   if (recordError) {
     return {
-      status: 'error',
+      status: 'ran_unrecorded',
+      result,
       message: `Action ${actionId} ran but its result was not recorded: ${recordError}`,
     };
   }

@@ -24,6 +24,15 @@ export type ToolOutcome =
   | { status: 'pending_approval'; actionId: string }
   | { status: 'error'; message: string };
 
+/** How an approved action ended. Only `error` means it was tried and did not work. */
+export type ApprovalOutcome =
+  | { status: 'ok'; result: unknown }
+  // The tool ran and its change stands, but the action row could not be updated.
+  | { status: 'ran_unrecorded'; result: unknown; message: string }
+  // The tool never ran. Unless the state is invalid, the row is still pending.
+  | { status: 'not_started'; message: string }
+  | { status: 'error'; message: string };
+
 export type ToolSpec = { name: string; description: string; input_schema: Record<string, unknown> };
 
 export type AgentMessage =

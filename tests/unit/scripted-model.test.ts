@@ -19,6 +19,12 @@ describe("scripted model", () => {
     expect(createStudyPlan.input.safeParse(turn.toolCalls[0].input).success).toBe(true);
   });
 
+  test('"unsaveable" sends input that passes validation but a date Postgres refuses', async () => {
+    const turn = await next([user("an unsaveable plan")]);
+    expect(createStudyPlan.input.safeParse(turn.toolCalls[0].input).success).toBe(true);
+    expect(JSON.stringify(turn.toolCalls[0].input)).toContain("0000-01-01");
+  });
+
   test('"fail" throws', async () => {
     await expect(next([user("please fail")])).rejects.toThrow();
   });

@@ -44,6 +44,15 @@ export function anonClient(): SupabaseClient {
   return createClient(url, anon, opts);
 }
 
+/** A client whose every request is refused by PostgREST, as with an expired session. */
+export function invalidTokenClient(): SupabaseClient {
+  const { url, anon } = env();
+  return createClient(url, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: "Bearer not-a-valid-token" } },
+  });
+}
+
 export async function createCollege(name: string, domain: string): Promise<string> {
   const { data, error } = await adminClient()
     .from("colleges")

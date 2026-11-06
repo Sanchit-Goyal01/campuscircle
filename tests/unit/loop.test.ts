@@ -184,14 +184,18 @@ describe('runAgent', () => {
     expect(r.reply).toMatch(/try again/i);
   });
 
-  test('failed step write marks run failed', async () => {
-    const { db, runUpdates } = makeDb({ stepError: { message: 'rls' } });
+  test('failed step write marks run failed and keeps the database text out of the reply', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, runUpdates } = makeDb({ stepError: { message: 'rls policy violated' } });
     const t = readTool();
     const { model } = scripted([{ text: '', toolCalls: [call('a')] }]);
     const r = await runAgent({ message: 'm', tools: [t], ctx: ctxFor(db), model });
     expect(r.status).toBe('failed');
+    expect(r.reply).not.toContain('rls policy violated');
     expect(t.run).not.toHaveBeenCalled();
     expect(runUpdates.at(-1).status).toBe('failed');
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   test('tools filtered by role before reaching model', async () => {

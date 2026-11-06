@@ -1,4 +1,4 @@
-import { errorResponse, signedOut, unexpected } from '@/agent/api';
+import { errorResponse, signedOut, toClientSteps, unexpected } from '@/agent/api';
 import { DailyLimitError, assertWithinDailyLimit } from '@/agent/limits';
 import { runAgent } from '@/agent/loop';
 import { getModelClient } from '@/agent/model';
@@ -36,7 +36,7 @@ async function readRun(ctx: ToolContext, runId: string) {
   ]);
   if (steps.error) throw new Error(`Could not read steps: ${steps.error.message}`);
   if (actions.error) throw new Error(`Could not read pending actions: ${actions.error.message}`);
-  return { steps: steps.data, pendingActions: actions.data };
+  return { steps: toClientSteps(steps.data), pendingActions: actions.data };
 }
 
 export async function POST(request: Request) {

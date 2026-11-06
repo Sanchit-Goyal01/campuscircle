@@ -38,7 +38,7 @@ function reasonFrom(result: unknown): string {
 
 type Decision =
   | { state: 'pending' }
-  | { state: 'done' }
+  | { state: 'done'; warning?: string }
   | { state: 'rejected' }
   | { state: 'failed'; reason: string }
   | { state: 'stale' };
@@ -59,8 +59,12 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
     setNotice('');
     try {
       const res = await fetch(`/api/agent/actions/${action.id}/${verb}`, { method: 'POST' });
-      const body = (await res.json().catch(() => null)) as { status?: string; result?: unknown } | null;
-      if (res.ok && body?.status === 'done') setDecision({ state: 'done' });
+      const body = (await res.json().catch(() => null)) as {
+        status?: string;
+        result?: unknown;
+        warning?: string;
+      } | null;
+      if (res.ok && body?.status === 'done') setDecision({ state: 'done', warning: body.warning });
       else if (res.ok && body?.status === 'rejected') setDecision({ state: 'rejected' });
       else if (res.ok && body?.status === 'failed') {
         setDecision({ state: 'failed', reason: reasonFrom(body.result) });
@@ -105,13 +109,14 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
         <pre className="slip-json">{JSON.stringify(action.input, null, 2)}</pre>
       )}
 
-      <div role="status" className="slip-outcome">
+      <div role="status">
         {outcome && (
-          <>
+          <div className="slip-outcome">
             <p className="stamp">{outcome.stamp}</p>
             <p className="slip-note">{outcome.text}</p>
-          </>
+          </div>
         )}
+        {decision.state === 'done' && decision.warning && <p className="slip-notice">{decision.warning}</p>}
       </div>
 
       {decision.state === 'pending' && (

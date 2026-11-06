@@ -140,9 +140,26 @@ describe('runApprovedAction', () => {
     const { db, rpc } = makeDb({ approveError: { message: 'invalid_action_state' } });
     const t = tool({ kind: 'write' });
     const out = await runApprovedAction('a1', [t], ctxFor(db));
-    expect(out.status).toBe('error');
+    expect(out).toEqual({ status: 'not_started', message: 'invalid_action_state' });
     expect(t.run).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalledWith('finish_pending_action', expect.anything());
+  });
+
+  test('a transport error on the approve RPC is not_started, not a failed action', async () => {
+    const { db, rpc } = makeDb({ approveError: { message: 'JWT expired' } });
+    const t = tool({ kind: 'write' });
+    const out = await runApprovedAction('a1', [t], ctxFor(db));
+    expect(out).toEqual({ status: 'not_started', message: 'JWT expired' });
+    expect(t.run).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalledWith('finish_pending_action', expect.anything());
+  });
+
+  test('an approve RPC that returns no row is not_started', async () => {
+    const { db } = makeDb({ approveRow: null });
+    const t = tool({ kind: 'write' });
+    const out = await runApprovedAction('a1', [t], ctxFor(db));
+    expect(out.status).toBe('not_started');
+    expect(t.run).not.toHaveBeenCalled();
   });
 
   test('role check applies; tool does not run and action is marked failed', async () => {
@@ -174,13 +191,16 @@ describe('runApprovedAction', () => {
     });
   });
 
-  test('finish failure after success gives distinct error and is not re-finished as failed', async () => {
+  test('finish failure after success is ran_unrecorded with the result, and is not re-finished as failed', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { db, rpc } = makeDb({ approveRow: row, finishError: { message: 'rpc down' } });
     const t = tool({ kind: 'write' });
     const out = await runApprovedAction('a1', [t], ctxFor(db));
-    expect(out.status).toBe('error');
-    expect((out as any).message).toContain('ran but its result was not recorded');
+    expect(out).toEqual({
+      status: 'ran_unrecorded',
+      result: { hello: 'world' },
+      message: expect.stringContaining('ran but its result was not recorded'),
+    });
     expect(t.run).toHaveBeenCalledOnce();
     const finishCalls = rpc.mock.calls.filter((c) => c[0] === 'finish_pending_action');
     expect(finishCalls).toHaveLength(1);

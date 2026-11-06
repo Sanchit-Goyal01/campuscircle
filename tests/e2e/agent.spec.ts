@@ -150,15 +150,50 @@ test("reject marks card rejected and saves nothing", async ({ page }) => {
   expect(await planCount(id)).toBe(0);
 });
 
-test("a failed action shows its reason on the card", async ({ page }) => {
+test("a tool that really fails shows Failed with a plain reason", async ({ page }) => {
+  const id = await signUp(page);
+  await ask(page, "unsaveable plan");
+  const approve = page.waitForResponse("**/approve");
+  await slip(page).getByRole("button", { name: "Approve" }).click();
+  const body = await (await approve).text();
+  expect(body).toContain('"status":"failed"');
+  expect(body).not.toMatch(/Could not save|date\/time|out of range/);
+  await expect(slip(page).getByText("Failed", { exact: true })).toBeVisible();
+  await expect(slip(page).getByText("This could not be saved.", { exact: false })).toBeVisible();
+  await expect(slip(page).getByRole("button", { name: "Approve" })).toHaveCount(0);
+  expect(await planCount(id)).toBe(0);
+});
+
+test("an approval that did not start keeps the buttons, and trying again saves", async ({ page }) => {
+  const id = await signUp(page);
+  await askForPlan(page);
+  await page.route("**/approve", (route) => route.fulfill({ status: 500, json: { error: "x" } }));
+  await slip(page).getByRole("button", { name: "Approve" }).click();
+  await expect(slip(page).getByRole("alert")).toHaveText("That request did not go through. Try again.");
+  await page.unroute("**/approve");
+  await slip(page).getByRole("button", { name: "Approve" }).click();
+  await expect(slip(page).getByText("This plan is saved.")).toBeVisible();
+  expect(await planCount(id)).toBe(1);
+});
+
+test("a saved action with an unrecorded result shows done and the warning", async ({ page }) => {
   await signUp(page);
   await askForPlan(page);
+  // Card rendering only: the route's mapping is covered in tests/rls/agent-routes.test.ts.
   await page.route("**/approve", (route) =>
-    route.fulfill({ json: { status: "failed", result: { error: "Could not save plan items" } } }),
+    route.fulfill({ json: { status: "done", result: {}, warning: "There is no need to ask again." } }),
   );
   await slip(page).getByRole("button", { name: "Approve" }).click();
-  await expect(slip(page).getByText("Could not save plan items")).toBeVisible();
-  await expect(slip(page).getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(slip(page).getByText("This plan is saved.")).toBeVisible();
+  await expect(slip(page).getByText("There is no need to ask again.")).toBeVisible();
+  await expect(slip(page).getByText("Failed", { exact: true })).toHaveCount(0);
+});
+
+test("a model failure response holds no raw error text", async ({ page }) => {
+  await signUp(page);
+  const res = await page.request.post("/api/agent/runs", { data: { message: "please fail" } });
+  expect(res.status()).toBe(502);
+  expect(await res.text()).not.toContain("Scripted model failure");
 });
 
 test("empty message and message over 4000 characters are refused", async ({ page }) => {

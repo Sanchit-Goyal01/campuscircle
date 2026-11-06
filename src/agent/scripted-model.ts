@@ -27,6 +27,13 @@ export function createScriptedModel(): ModelClient {
         );
       }
 
+      // Passes input validation but Postgres has no year 0, so saving really fails.
+      if (message.includes('unsaveable')) {
+        return call('create_study_plan', {
+          title: 'Unsaveable plan',
+          items: [{ due_on: '0000-01-01', task: 'Cannot be stored' }],
+        });
+      }
       if (message.includes('plan')) {
         return call('create_study_plan', {
           title: 'Semester revision plan',
