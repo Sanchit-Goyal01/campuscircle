@@ -14,7 +14,8 @@ const SYSTEM_PROMPT = [
 type Status = 'completed' | 'stopped_limit' | 'failed';
 type RunResult = { runId: string; status: Status; reply: string };
 
-const wrap = (s: string) => `<tool_data>${s}</tool_data>`;
+// Neutralise any closing fence in tool text so data cannot escape the <tool_data> block.
+const wrap = (s: string) => `<tool_data>${s.replace(/<\/(\s*)tool_data/gi, '&lt;/$1tool_data')}</tool_data>`;
 const stringify = (v: unknown) => {
   try {
     return JSON.stringify(v) ?? 'null';
@@ -110,7 +111,14 @@ export async function runAgent(args: {
       used += 1;
       const callErr = await step('tool_call', call.name, { id: call.id, input: call.input });
       if (callErr) return stepFailed(callErr);
-      const outcome = await executeToolCall(call, tools, ctx, runId);
+      let outcome: ToolOutcome;
+      try {
+        outcome = await executeToolCall(call, tools, ctx, runId);
+      } catch (e) {
+        console.error('executeToolCall threw', runId, call.name, e);
+        await step('error', call.name, { id: call.id, message: 'Tool execution failed unexpectedly' });
+        return finish('failed', 'Sorry, something went wrong while I was working on that. Please try again.');
+      }
       const { output, isError } = describeOutcome(outcome);
       const kind =
         outcome.status === 'pending_approval' ? 'approval_requested' : outcome.status === 'error' ? 'error' : 'tool_result';
