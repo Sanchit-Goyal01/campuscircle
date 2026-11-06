@@ -57,6 +57,9 @@ grant execute on function public.current_college_id() to authenticated;
 grant execute on function public.app_role_of_user() to authenticated;
 
 -- Sign-up: derive college from the email domain, never from client input.
+-- Unlisted domains are refused at insert. A profile exists only for a confirmed
+-- email: created at insert when already confirmed, otherwise when
+-- email_confirmed_at goes from null to not null.
 create function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -74,8 +77,13 @@ begin
     raise exception 'college_not_registered';
   end if;
 
+  if new.email_confirmed_at is null then
+    return new;
+  end if;
+
   insert into public.profiles (id, college_id, full_name)
-  values (new.id, v_college, coalesce(new.raw_user_meta_data ->> 'full_name', ''));
+  values (new.id, v_college, coalesce(new.raw_user_meta_data ->> 'full_name', ''))
+  on conflict (id) do nothing;
   return new;
 end;
 $$;
@@ -83,6 +91,12 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+create trigger on_auth_user_confirmed
+  after update of email_confirmed_at on auth.users
+  for each row
+  when (old.email_confirmed_at is null and new.email_confirmed_at is not null)
+  execute function public.handle_new_user();
 
 alter table public.colleges enable row level security;
 alter table public.departments enable row level security;

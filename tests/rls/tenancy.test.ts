@@ -118,4 +118,37 @@ describe("tenancy", () => {
       .single();
     expect(row!.bio).not.toBe("pwned");
   });
+
+  test("unconfirmed signup has no profile and is invisible to peers", async () => {
+    const peer = await createStudent(`peer-${run}@${domA}`);
+    const admin = adminClient();
+    const { data, error } = await admin.auth.admin.createUser({
+      email: `ghost-${run}@${domA}`,
+      password: TEST_PASSWORD,
+      email_confirm: false,
+      user_metadata: { full_name: "Invented Name" },
+    });
+    expect(error).toBeNull();
+    const { data: rows } = await admin.from("profiles").select("id").eq("id", data.user!.id);
+    expect(rows).toEqual([]);
+    const { data: seen } = await peer.client.from("profiles").select("id, full_name");
+    expect(seen!.map((r) => r.id)).not.toContain(data.user!.id);
+    expect(seen!.map((r) => r.full_name)).not.toContain("Invented Name");
+  });
+
+  test("confirming the email creates the profile in the right college", async () => {
+    const admin = adminClient();
+    const { data } = await admin.auth.admin.createUser({
+      email: `late-${run}@${domB}`,
+      password: TEST_PASSWORD,
+      email_confirm: false,
+    });
+    const id = data.user!.id;
+    const before = await admin.from("profiles").select("id").eq("id", id);
+    expect(before.data).toEqual([]);
+    const { error } = await admin.auth.admin.updateUserById(id, { email_confirm: true });
+    expect(error).toBeNull();
+    const { data: prof } = await admin.from("profiles").select("college_id").eq("id", id).single();
+    expect(prof!.college_id).toBe(collegeB);
+  });
 });
