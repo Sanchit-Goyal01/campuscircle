@@ -143,4 +143,48 @@ describe("people and mentorship", { timeout: 60_000 }, () => {
     const after = await adminClient().from("mentorship_requests").select("id", { count: "exact", head: true }).eq("student_id", S2.id);
     expect(after.count).toBe(1);
   });
+
+  test("decline notifies the student, blocks re-request for 7 days; college B cannot decide", async () => {
+    const S3 = await createStudent(`s3-${run}@pa-${run}.edu`);
+    const r = await S3.client.rpc("request_mentorship", { p_mentor_id: mentor.id, p_subject: "SQL", p_message: MSG });
+    expect(r.error).toBeNull();
+    expect((await studentB.client.rpc("decide_mentorship", { p_request_id: r.data, p_accept: true })).error?.code).toBe("42501");
+    expect((await mentorB.client.rpc("decide_mentorship", { p_request_id: r.data, p_accept: false })).error?.code).toBe("42501");
+    expect((await mentor.client.rpc("decide_mentorship", { p_request_id: r.data, p_accept: false })).error).toBeNull();
+    const { data } = await adminClient().from("notifications").select("link").eq("user_id", S3.id).eq("kind", "mentorship_declined");
+    expect(data).toHaveLength(1);
+    const again = await S3.client.rpc("request_mentorship", { p_mentor_id: mentor.id, p_subject: "SQL", p_message: MSG });
+    expect(again.error?.code).toBe("P0001");
+    expect(again.error?.message).toContain("declined_recently");
+    await adminClient().from("mentorship_requests").update({ decided_at: new Date(Date.now() - 8 * 86400_000).toISOString() }).eq("id", r.data);
+    expect((await S3.client.rpc("request_mentorship", { p_mentor_id: mentor.id, p_subject: "SQL", p_message: MSG })).error).toBeNull();
+  });
+
+  test("a mentor who is not a student is not requestable and not listed", async () => {
+    const auth = await createUserWithRole(`au-${run}@pa-${run}.edu`, "authority");
+    await adminClient().from("profiles").update({ is_mentor: true, skills: ["DBMS"] }).eq("id", auth.id);
+    const r = await student.client.rpc("request_mentorship", { p_mentor_id: auth.id, p_subject: "DBMS", p_message: MSG });
+    expect(r.error?.code).toBe("42501");
+    const out = (await tool("find_mentor").run({ subject: "DBMS" }, ctxFor(student, collegeA))) as any[];
+    expect(out.map((m) => m.mentor_id)).not.toContain(auth.id);
+    const { findPeople } = await import("../../src/modules/people/queries");
+    expect((await findPeople(student.client, {}, student.id)).map((p) => p.id)).not.toContain(auth.id);
+  });
+
+  test("find_teammates applies the limit after matching, even past 50 profiles", async () => {
+    const admin = adminClient();
+    const college = await createCollege(`People C ${run}`, `pc-${run}.edu`);
+    const make = async (name: string) => {
+      const { data, error } = await admin.auth.admin.createUser({ email: `${name}-${run}@pc-${run}.edu`, password: "test-password-123!", email_confirm: true, user_metadata: { full_name: name } });
+      expect(error).toBeNull();
+      return data.user!.id;
+    };
+    const names = Array.from({ length: 55 }, (_, i) => `a${String(i).padStart(2, "0")}`);
+    for (let i = 0; i < names.length; i += 11) await Promise.all(names.slice(i, i + 11).map(make));
+    const late = await make("zzlate");
+    await admin.from("profiles").update({ skills: ["Rust"] }).eq("id", late);
+    const me = await createStudent(`me-${run}@pc-${run}.edu`);
+    const out = (await tool("find_teammates").run({ skills: ["rust"] }, ctxFor(me, college))) as any[];
+    expect(out.map((o) => o.name)).toEqual(["zzlate"]);
+  });
 });

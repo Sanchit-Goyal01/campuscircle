@@ -12,6 +12,12 @@ async function People({ searchParams }: { searchParams: Promise<{ skill?: string
   const skill = (Array.isArray(sp.skill) ? sp.skill[0] : sp.skill)?.trim().slice(0, 40) ?? "";
   const mentorsOnly = (Array.isArray(sp.mentors) ? sp.mentors[0] : sp.mentors) === "1";
   const people = await findPeople(me.db, { skill: skill || undefined, mentorsOnly, limit: 30 }, me.userId);
+  const { data: pend } = await me.db
+    .from("mentorship_requests")
+    .select("mentor_id")
+    .eq("student_id", me.userId)
+    .eq("status", "pending");
+  const pending = new Set(((pend ?? []) as { mentor_id: string }[]).map((r) => r.mentor_id));
   const canRequest = me.profile.role === "student";
 
   return (
@@ -42,7 +48,7 @@ async function People({ searchParams }: { searchParams: Promise<{ skill?: string
               </div>
               {p.bio && <p>{p.bio}</p>}
               <p>{p.skills.length > 0 ? `Skills: ${p.skills.join(", ")}` : "No skills listed."}</p>
-              {canRequest && p.is_mentor && <RequestForm mentorId={p.id} />}
+              {canRequest && p.is_mentor && (pending.has(p.id) ? <p className="mt-2">Request pending</p> : <RequestForm mentorId={p.id} />)}
             </li>
           ))}
         </ul>

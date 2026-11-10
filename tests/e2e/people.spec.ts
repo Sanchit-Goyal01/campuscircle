@@ -51,7 +51,7 @@ test("student finds a DBMS mentor, sends a request, mentor accepts", async ({ pa
   await card.getByLabel("Subject").fill("DBMS");
   await card.getByLabel("Message").fill("Please help me with normalisation.");
   await card.getByRole("button", { name: "Request mentorship" }).click();
-  await expect(card.getByText("Request sent.")).toBeVisible();
+  await expect(card.getByText("Request pending")).toBeVisible();
   await sp.goto("/mentorship");
   await expect(sp.getByText("Pending")).toBeVisible();
 

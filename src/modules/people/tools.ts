@@ -4,6 +4,7 @@ import { UUID } from '../academics/http';
 import { findPeople } from './queries';
 
 const one = <T>(v: T | T[] | null | undefined): T | undefined => (Array.isArray(v) ? v[0] : (v ?? undefined));
+const DECLINED = 'This mentor declined recently. Try again later.';
 const NOT_ALLOWED = 'You cannot request mentorship from that person.';
 
 export const getMyProfile: AgentTool<Record<string, never>> = {
@@ -60,7 +61,7 @@ export const findTeammates: AgentTool<z.infer<typeof teammatesInput>> = {
   input: teammatesInput,
   async run(input, ctx) {
     const want = new Set(input.skills.map((s) => s.toLowerCase()));
-    const people = await findPeople(ctx.db, { limit: 50 }, ctx.userId);
+    const people = await findPeople(ctx.db, { skills: input.skills, limit: 50 }, ctx.userId);
     return people
       .map((p) => ({
         name: p.name,
@@ -95,6 +96,7 @@ export const requestMentorship: AgentTool<z.infer<typeof requestInput>> = {
     });
     if (error) {
       if (error.code === '42501') throw new Error(NOT_ALLOWED);
+      if (error.message.includes('declined_recently')) throw new Error(DECLINED);
       if (error.code === '23505') throw new Error('You already have a pending request to this mentor.');
       throw new Error('Could not send the mentorship request.');
     }

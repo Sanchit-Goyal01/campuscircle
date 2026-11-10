@@ -23,6 +23,7 @@ export async function requestMentorship(_prev: RequestState, formData: FormData)
     p_message: message,
   });
   if (error) {
+    if (error.message.includes("declined_recently")) return { error: "This mentor declined recently. Try again later." };
     if (error.code === "23505") return { error: "You already have a pending request to this mentor." };
     if (error.code === "42501") return { error: "You can't request mentorship from this person." };
     if (error.code === "23514") return { error: "Check the subject and message length." };

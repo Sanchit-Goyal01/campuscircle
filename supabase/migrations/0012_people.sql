@@ -70,12 +70,20 @@ begin
   end if;
   if p_mentor_id is null or p_mentor_id = v_uid
      or not exists (select 1 from public.profiles m
-                    where m.id = p_mentor_id and m.college_id = v_college and m.is_mentor) then
+                    where m.id = p_mentor_id and m.college_id = v_college and m.is_mentor
+                      and m.role = 'student') then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
   if v_subject is null or char_length(v_subject) not between 1 and 80
      or v_message is null or char_length(v_message) not between 10 and 500 then
     raise exception 'invalid_request' using errcode = '23514';
+  end if;
+
+  -- A declined request blocks a new one to the same mentor for 7 days.
+  if exists (select 1 from public.mentorship_requests r
+             where r.student_id = v_uid and r.mentor_id = p_mentor_id
+               and r.status = 'declined' and r.decided_at > now() - interval '7 days') then
+    raise exception 'declined_recently' using errcode = 'P0001';
   end if;
 
   -- The unique pending index raises 23505 on a second open request to the same mentor.
