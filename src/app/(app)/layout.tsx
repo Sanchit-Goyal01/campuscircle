@@ -62,6 +62,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/profile" className="text-sm underline">
             Profile
           </Link>
+          <Link href="/feed" className="text-sm underline">
+            Feed
+          </Link>
           <Link href="/people" className="text-sm underline">
             People
           </Link>
