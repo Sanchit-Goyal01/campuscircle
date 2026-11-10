@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
 import { formatPrice } from "@/modules/market/queries";
+import { MessageButton } from "../../messages/message-button";
 import { CONDITION_LABEL } from "../labels";
 import { ContactForm } from "./contact-form";
 import { SellerActions } from "./seller-actions";
@@ -42,6 +43,11 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       </p>
       {l.description && <p className="whitespace-pre-wrap">{l.description}</p>}
 
+      {!isSeller && (
+        <div>
+          <MessageButton personId={l.seller_id} />
+        </div>
+      )}
       {isSeller ? (
         <SellerActions listingId={l.id} available={l.status === "available"} />
       ) : l.status === "available" && me.profile.role === "student" ? (

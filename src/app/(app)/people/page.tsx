@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { findPeople } from "@/modules/people/queries";
+import { MessageButton } from "../messages/message-button";
 import { RequestForm } from "./request-form";
 
 const field = "border border-zinc-400 px-2 py-1";
@@ -48,6 +49,11 @@ async function People({ searchParams }: { searchParams: Promise<{ skill?: string
               </div>
               {p.bio && <p>{p.bio}</p>}
               <p>{p.skills.length > 0 ? `Skills: ${p.skills.join(", ")}` : "No skills listed."}</p>
+              {p.id !== me.userId && (
+                <div className="mt-2">
+                  <MessageButton personId={p.id} />
+                </div>
+              )}
               {canRequest && p.is_mentor && (pending.has(p.id) ? <p className="mt-2">Request pending</p> : <RequestForm mentorId={p.id} />)}
             </li>
           ))}

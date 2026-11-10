@@ -7,6 +7,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_study_plan: 'Save a study plan',
   request_mentorship: 'Ask a mentor for help',
   register_for_event: 'Register for an event',
+  send_message: 'Send a message',
 };
 
 type Plan = { title: string; items: { due_on: string; task: string }[] };
@@ -112,6 +113,11 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
           <p className="slip-title">{action.display.mentor ?? 'A mentor we could not find'}</p>
           <p className="slip-note">Subject: {action.display.subject}</p>
           <p>{action.display.message}</p>
+        </>
+      ) : action.display?.kind === 'message' ? (
+        <>
+          <p className="slip-title">Send a message to {action.display.recipient ?? 'A person we could not find'}</p>
+          <p className="whitespace-pre-wrap">{action.display.body}</p>
         </>
       ) : action.display?.kind === 'event' ? (
         <>

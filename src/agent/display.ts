@@ -5,6 +5,7 @@ import { formatWhen } from '../modules/events/queries';
 /** Plain details for an approval card, so the student never has to read an id. A null name or title means the lookup found nothing. */
 export type ActionDisplay =
   | { kind: 'mentorship'; mentor: string | null; subject: string; message: string }
+  | { kind: 'message'; recipient: string | null; body: string }
   | { kind: 'event'; title: string | null; when: string | null; venue: string | null };
 
 type Pending = { tool_name: string; input: unknown };
@@ -27,6 +28,15 @@ export async function describeAction(db: SupabaseClient, action: Pending): Promi
       mentor = (data?.full_name as string | undefined)?.trim() || null;
     }
     return { kind: 'mentorship', mentor, subject: text(input.subject), message: text(input.message) };
+  }
+  if (action.tool_name === 'send_message') {
+    const id = idOf(input.recipient_id);
+    let recipient: string | null = null;
+    if (id) {
+      const { data } = await db.from('profiles').select('full_name').eq('id', id).maybeSingle();
+      recipient = (data?.full_name as string | undefined)?.trim() || null;
+    }
+    return { kind: 'message', recipient, body: text(input.body) };
   }
   if (action.tool_name === 'register_for_event') {
     const id = idOf(input.event_id);

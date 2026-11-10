@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
+import { unreadConversationCount } from "@/modules/messaging/queries";
 import { SignOutButton } from "./sign-out-button";
 
 async function Shell({ children }: { children: React.ReactNode }) {
@@ -27,6 +28,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
     .select("id", { count: "exact", head: true })
     .is("read_at", null);
   const unread = count ?? 0;
+  const unreadChats = await unreadConversationCount(me.db, me.userId);
 
   return (
     <div className="flex flex-1 flex-col md:flex-row">
@@ -79,6 +81,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/societies" className="text-sm underline">
             Societies
+          </Link>
+          <Link href="/messages" className="text-sm underline">
+            {unreadChats > 0 ? `Messages (${unreadChats})` : "Messages"}
           </Link>
           <Link href="/notifications" className="text-sm underline">
             {unread > 0 ? `Notifications (${unread})` : "Notifications"}

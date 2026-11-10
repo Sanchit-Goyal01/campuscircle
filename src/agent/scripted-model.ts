@@ -93,10 +93,28 @@ function demoTurn(messages: AgentMessage[], now: Date): ModelTurn {
   return say(called.has('request_mentorship') ? DEMO_FINAL : DEMO_FINAL_NO_MENTOR);
 }
 
+const MESSAGE_RE = /^message ([^:]{2,80}):\s*(.+)$/i;
+
+/** Find the person, then send to the first match; no match ends the run with plain text. */
+function messageTurn(messages: AgentMessage[], name: string, body: string): ModelTurn {
+  const called = new Map<string, string>(); // tool name -> call id
+  for (const m of messages) {
+    if (m.role === 'assistant') for (const c of m.toolCalls) called.set(c.name, c.id);
+  }
+  if (called.has('send_message')) return say('I drafted your message. It is waiting for your approval.');
+  const id = called.get('find_person');
+  if (!id) return call('find_person', { name });
+  const out = messages.flatMap((m) => (m.role === 'tool' ? m.results : [])).find((r) => r.id === id);
+  // Only trust an id that sits in a "person_id" field of the find_person result.
+  const personId = out && !out.isError ? out.output.match(new RegExp(`"person_id":"(${UUID_RE.source})"`, 'i'))?.[1] : undefined;
+  if (!personId) return say('I could not find anyone by that name.');
+  return call('send_message', { recipient_id: personId, body });
+}
+
 /**
  * Test double for end-to-end runs. Picks its turn by keyword in the first user
  * message. Order matters and is fixed: "fail" throws, then a lone submit_* tool,
- * then my complaints, campus, complain, weak, notes, papers, exam, plan, marks. The first match wins.
+ * then a leading "message <name>: <text>", then my complaints, campus, complain, weak, notes, papers, exam, plan, marks. The first match wins.
  */
 export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {
@@ -142,6 +160,11 @@ export function createScriptedModel(now: () => Date = () => new Date()): ModelCl
       if (tools.length === 1 && tools[0].name.startsWith('submit_') && tools[0].name in SUBMIT_INPUTS) {
         return call(tools[0].name, SUBMIT_INPUTS[tools[0].name]);
       }
+
+      // "message <name>: <text>" (anchored at the start, original case) finds the person, then sends.
+      const raw = messages.find((m) => m.role === 'user');
+      const dm = (raw?.role === 'user' ? raw.content : '').trim().match(MESSAGE_RE);
+      if (dm) return messageTurn(messages, dm[1].trim(), dm[2].trim());
 
       // The demo script runs before every keyword rule below.
       // Matches "exam in" and "exam is in", so the natural demo sentence works.
