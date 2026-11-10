@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type Person = { id: string; name: string; bio: string | null; skills: string[]; is_mentor: boolean };
+export type Person = { id: string; name: string; bio: string | null; skills: string[]; is_mentor: boolean; verified: boolean };
 
 export type FindPeopleOptions = { skill?: string; skills?: string[]; mentorsOnly?: boolean; limit?: number };
 
@@ -23,7 +23,7 @@ export async function findPeople(
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 20), 1), MAX_LIMIT);
   let q = db
     .from('profiles')
-    .select('id, full_name, bio, skills, is_mentor')
+    .select('id, full_name, bio, skills, is_mentor, verified')
     .eq('role', 'student')
     .order('full_name')
     .order('id')
@@ -43,6 +43,7 @@ export async function findPeople(
       bio: (p.bio ?? null) as string | null,
       skills: p.skills as string[],
       is_mentor: p.is_mentor as boolean,
+      verified: p.verified === true,
     }));
 }
 

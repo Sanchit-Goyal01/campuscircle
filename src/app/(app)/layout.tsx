@@ -61,6 +61,14 @@ async function Shell({ children }: { children: React.ReactNode }) {
               Dashboard
             </Link>
           )}
+          {me.profile.role === "college_admin" && (
+            <Link href="/admin" className="text-sm underline">
+              Admin
+            </Link>
+          )}
+          <Link href="/announcements" className="text-sm underline">
+            Announcements
+          </Link>
           <Link href="/profile" className="text-sm underline">
             Profile
           </Link>

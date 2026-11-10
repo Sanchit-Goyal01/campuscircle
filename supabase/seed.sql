@@ -107,3 +107,7 @@ values (
   'Weekly problem solving, hack nights and peer teaching for anyone who likes to code.',
   '00000000-0000-0000-0000-0000000000aa'
 ) on conflict do nothing;
+
+-- Demo verified badges.
+update public.profiles set verified = true
+where id in ('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-0000000000aa');

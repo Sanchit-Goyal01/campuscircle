@@ -46,6 +46,7 @@ async function People({ searchParams }: { searchParams: Promise<{ skill?: string
               <div className="font-medium">
                 {p.name || "Unnamed student"}
                 {p.is_mentor ? " · Mentor" : ""}
+                {p.verified && <span className="ml-2 text-xs font-normal">Verified</span>}
               </div>
               {p.bio && <p>{p.bio}</p>}
               <p>{p.skills.length > 0 ? `Skills: ${p.skills.join(", ")}` : "No skills listed."}</p>

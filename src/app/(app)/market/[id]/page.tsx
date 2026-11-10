@@ -16,7 +16,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
   if (!me) return null; // layout renders the no-profile message
   const { data } = await me.db
     .from("listings")
-    .select("id, seller_id, title, description, price_inr, condition, status, photo_path, created_at, profiles(full_name)")
+    .select("id, seller_id, title, description, price_inr, condition, status, photo_path, created_at, profiles(full_name, verified)")
     .eq("id", id)
     .maybeSingle();
   if (!data) notFound();
@@ -39,6 +39,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       <p className="text-xl">{formatPrice(l.price_inr)}</p>
       <p className="text-sm">
         {CONDITION_LABEL[l.condition] ?? l.condition} · Sold by {prof?.full_name || "a student"}
+        {prof?.verified === true ? " · Verified" : ""}
         {l.status === "sold" ? " · Sold" : ""}
       </p>
       {l.description && <p className="whitespace-pre-wrap">{l.description}</p>}

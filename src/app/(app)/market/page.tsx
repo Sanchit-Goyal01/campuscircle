@@ -54,7 +54,10 @@ async function Market({ searchParams }: { searchParams: Promise<{ q?: string | s
               <div>
                 {formatPrice(l.price_inr)} · {CONDITION_LABEL[l.condition] ?? l.condition}
               </div>
-              <div>Sold by {l.seller_name}</div>
+              <div>
+                Sold by {l.seller_name}
+                {l.seller_verified && <span className="ml-2 text-xs">Verified</span>}
+              </div>
             </li>
           ))}
         </ul>

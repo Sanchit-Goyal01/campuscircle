@@ -5,6 +5,7 @@ import Link from "next/link";
 import { allTools } from "@/modules";
 import { formatWhen, upcomingRegisteredEvents } from "@/modules/events/queries";
 import { formatPrice, myAvailableListings } from "@/modules/market/queries";
+import { listAnnouncements } from "@/modules/admin/queries";
 import { pendingMentorshipCounts } from "@/modules/people/queries";
 
 const link = "underline";
@@ -91,6 +92,30 @@ async function StudentShortcuts({ db, userId }: { db: SupabaseClient; userId: st
   );
 }
 
+async function LatestAnnouncements({ db }: { db: SupabaseClient }) {
+  const items = await listAnnouncements(db, 3);
+  return (
+    <section aria-label="College announcements" className="flex flex-col gap-2 border border-zinc-300 p-3 text-sm">
+      <h2 className="text-lg font-semibold">College announcements</h2>
+      {items.length === 0 ? (
+        <p>No announcements yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {items.map((a) => (
+            <li key={a.id}>
+              <div className="font-medium">{a.title}</div>
+              <div>{formatWhen(a.created_at)} IST</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link href="/announcements" className={link}>
+        All announcements
+      </Link>
+    </section>
+  );
+}
+
 function StaffLinks({ role }: { role: string }) {
   const issues = role === "authority" || role === "college_admin";
   const events = role === "college_admin" || role === "society_admin";
@@ -135,6 +160,7 @@ export default async function HomePage() {
       ) : (
         <StaffLinks role={me.profile.role} />
       )}
+      <LatestAnnouncements db={me.db} />
       {/* Keyed so one student's conversation can never show for another in a hidden route. */}
       {hasTools && <AgentPanel key={me.userId} />}
     </div>

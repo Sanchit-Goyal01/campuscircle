@@ -6,6 +6,7 @@ export type Listing = {
   price_inr: number;
   condition: string;
   seller_name: string;
+  seller_verified: boolean;
   created_at: string;
   photo_path: string | null;
 };
@@ -29,7 +30,7 @@ export async function searchListings(
   const query = (opts.query ?? '').trim().slice(0, MAX_QUERY).trim();
   let q = db
     .from('listings')
-    .select('id, title, price_inr, condition, created_at, photo_path, profiles(full_name)')
+    .select('id, title, price_inr, condition, created_at, photo_path, profiles(full_name, verified)')
     .eq('status', 'available');
   if (query) q = q.textSearch('search', query, { type: 'websearch', config: 'simple' });
   const { data, error } = await q.order('created_at', { ascending: false }).limit(limit);
@@ -42,6 +43,7 @@ export async function searchListings(
       price_inr: l.price_inr as number,
       condition: l.condition as string,
       seller_name: (p?.full_name || 'A student') as string,
+      seller_verified: p?.verified === true,
       created_at: l.created_at as string,
       photo_path: (l.photo_path ?? null) as string | null,
     };
