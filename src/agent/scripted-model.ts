@@ -44,6 +44,53 @@ const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string 
   { keyword: 'exam', tool: 'get_timetable', input: {}, done: 'I read your timetable.' },
 ];
 
+const DEMO_FINAL =
+  'I found your weak subjects, papers, notes, a mentor and a used textbook. Approve the study plan and the mentor request to go ahead.';
+const DEMO_READS: [string, unknown][] = [
+  ['get_marks', {}],
+  ['get_weak_subjects', {}],
+  ['get_past_papers', { subject: 'DBMS' }],
+  ['search_notes', { query: 'DBMS normalization' }],
+  ['find_mentor', { subject: 'DBMS' }],
+  ['search_listings', { query: 'database' }],
+];
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** Multi-step demo: one tool per turn, each picked by whether its call is already in the conversation. */
+function demoTurn(messages: AgentMessage[], now: Date): ModelTurn {
+  const called = new Map<string, string>(); // tool name -> call id
+  for (const m of messages) {
+    if (m.role === 'assistant') for (const c of m.toolCalls) called.set(c.name, c.id);
+  }
+  for (const [name, input] of DEMO_READS) if (!called.has(name)) return call(name, input);
+  if (!called.has('create_study_plan')) {
+    const today = agentToday(now);
+    return call('create_study_plan', {
+      title: 'DBMS exam revision plan',
+      items: [
+        { due_on: addDays(today, 1), task: 'Revise DBMS normalization' },
+        { due_on: addDays(today, 4), task: 'Practise DBMS past papers' },
+        { due_on: addDays(today, 7), task: 'Revise SQL and transactions' },
+        { due_on: addDays(today, 9), task: 'Take a DBMS mock test' },
+      ],
+    });
+  }
+  if (!called.has('request_mentorship')) {
+    const id = called.get('find_mentor');
+    const out = messages.flatMap((m) => (m.role === 'tool' ? m.results : [])).find((r) => r.id === id);
+    // Only trust an id that sits in a "mentor_id" field of the find_mentor result.
+    const mentorId = out && !out.isError ? out.output.match(new RegExp(`"mentor_id":"(${UUID_RE.source})"`, 'i'))?.[1] : undefined;
+    if (mentorId) {
+      return call('request_mentorship', {
+        mentor_id: mentorId,
+        subject: 'DBMS',
+        message: 'I am weak in DBMS and my exam is in 10 days. Could you help me revise?',
+      });
+    }
+  }
+  return say(DEMO_FINAL);
+}
+
 /**
  * Test double for end-to-end runs. Picks its turn by keyword in the first user
  * message. Order matters and is fixed: "fail" throws, then a lone submit_* tool,
@@ -93,6 +140,10 @@ export function createScriptedModel(now: () => Date = () => new Date()): ModelCl
       if (tools.length === 1 && tools[0].name.startsWith('submit_') && tools[0].name in SUBMIT_INPUTS) {
         return call(tools[0].name, SUBMIT_INPUTS[tools[0].name]);
       }
+
+      // The demo script runs before every keyword rule below.
+      // Matches "exam in" and "exam is in", so the natural demo sentence works.
+      if (message.includes('weak in') && /exam (is )?in/.test(message)) return demoTurn(messages, now());
 
       // Tool results are in, so finish: returning another tool call would spin the loop.
       const read = READ_TOOLS.find((r) => message.includes(r.keyword));

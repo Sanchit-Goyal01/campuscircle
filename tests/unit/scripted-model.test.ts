@@ -152,4 +152,78 @@ describe("scripted model", () => {
     expect(await done("campus")).toBe("I checked open issues on campus.");
     expect(await done("complain")).toBe("I drafted a complaint. It is waiting for your approval.");
   });
+
+  describe("demo script", () => {
+    const DEMO = "I'm weak in DBMS and my exam is in 10 days.";
+    const MENTOR = "aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb";
+    const outputs: Record<string, string> = {
+      find_mentor: `<tool_data>${JSON.stringify([{ mentor_id: MENTOR, name: "Priya Sharma", skills: ["DBMS"], bio: null }])}</tool_data>`,
+    };
+    // Replays the loop: one call per turn, each answered by a tool result.
+    async function run(first: string) {
+      const messages: AgentMessage[] = [user(first)];
+      const calls: { name: string; input: unknown }[] = [];
+      for (let i = 0; i < 20; i++) {
+        const turn = await next(messages);
+        if (turn.toolCalls.length === 0) return { calls, text: turn.text, messages };
+        const c = turn.toolCalls[0];
+        calls.push({ name: c.name, input: c.input });
+        messages.push({ role: "assistant", text: "", toolCalls: turn.toolCalls });
+        messages.push({
+          role: "tool",
+          results: [{ id: c.id, output: outputs[c.name] ?? "<tool_data>[]</tool_data>", isError: false }],
+        });
+      }
+      throw new Error("script did not stop");
+    }
+
+    test("demo script calls tools in order and stops after two write proposals", async () => {
+      const { calls, text } = await run(DEMO);
+      expect(calls.map((c) => c.name)).toEqual([
+        "get_marks",
+        "get_weak_subjects",
+        "get_past_papers",
+        "search_notes",
+        "find_mentor",
+        "search_listings",
+        "create_study_plan",
+        "request_mentorship",
+      ]);
+      expect(calls[2].input).toEqual({ subject: "DBMS" });
+      expect(calls[3].input).toEqual({ query: "DBMS normalization" });
+      expect(calls[4].input).toEqual({ subject: "DBMS" });
+      expect(calls[5].input).toEqual({ query: "database" });
+      expect(createStudyPlan.input.safeParse(calls[6].input).success).toBe(true);
+      expect(text).toBe(
+        "I found your weak subjects, papers, notes, a mentor and a used textbook. Approve the study plan and the mentor request to go ahead.",
+      );
+    });
+
+    test("demo script plan ends 10 days out and matches before other keywords", async () => {
+      const model = createScriptedModel(() => new Date("2026-11-06T19:00:00Z"));
+      const messages: AgentMessage[] = [user("MY NOTES: weak in dbms, exam in 10 days, plan")];
+      const first = await model.next({ system: "", tools: [], messages });
+      expect(first.toolCalls[0].name).toBe("get_marks");
+    });
+
+    test("demo script takes mentor_id from the find_mentor result", async () => {
+      const { calls } = await run(DEMO);
+      expect(calls[7].input).toEqual({
+        mentor_id: MENTOR,
+        subject: "DBMS",
+        message: "I am weak in DBMS and my exam is in 10 days. Could you help me revise?",
+      });
+    });
+
+    test("demo script skips the mentor request when no mentor was found", async () => {
+      outputs.find_mentor = "<tool_data>[]</tool_data>";
+      const { calls } = await run(DEMO);
+      expect(calls.map((c) => c.name)).not.toContain("request_mentorship");
+      outputs.find_mentor = `<tool_data>${JSON.stringify([{ mentor_id: MENTOR }])}</tool_data>`;
+    });
+
+    test("needs both phrases", async () => {
+      expect((await next([user("I am weak in DBMS")])).toolCalls[0].name).toBe("get_weak_subjects");
+    });
+  });
 });
