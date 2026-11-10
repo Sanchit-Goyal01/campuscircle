@@ -21,7 +21,7 @@ export default defineConfig({
       // so the agent suite runs on `next dev`. Dev output goes to .next/dev and
       // build output to .next, each with its own lock, so the two servers do not collide.
       name: "agent",
-      testMatch: /agent\.spec\.ts/,
+      testMatch: /(^|[\\/])agent\.spec\.ts$/,
       timeout: 60_000,
       use: { ...devices["Desktop Chrome"], baseURL: `http://localhost:${agentPort}` },
     },

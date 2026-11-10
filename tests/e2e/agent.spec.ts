@@ -210,14 +210,14 @@ test("the fresh start hint stays visible after a reply", async ({ page }) => {
   await expect(hint).toBeVisible();
 });
 
-test("a role with no tools sees no panel", async ({ page }) => {
+test("an authority sees the panel because campus status is open to every role", async ({ page }) => {
   const id = await signUp(page);
   await expect(page.getByRole("region", { name: "CampusCircle assistant" })).toBeVisible();
   const { error } = await adminClient().from("profiles").update({ role: "authority" }).eq("id", id);
   if (error) throw error;
   await page.reload();
   await expect(page.getByRole("heading", { name: /Welcome/ })).toBeVisible();
-  await expect(page.getByRole("region", { name: "CampusCircle assistant" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "CampusCircle assistant" })).toBeVisible();
 });
 
 test("empty message and message over 4000 characters are refused", async ({ page }) => {

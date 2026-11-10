@@ -27,8 +27,17 @@ const call = (name: string, input: unknown): ModelTurn => ({
   toolCalls: [{ id: `scripted_${name}`, name, input }],
 });
 
-// Read-tool keywords, checked in this order, after "fail" and before "plan" and "marks".
+// Keywords checked in this order, after "fail" and the submit_* checks and before "plan" and "marks".
+// The issue keywords come first so "my complaints" beats "complain" and "campus" beats "weak".
 const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string }[] = [
+  { keyword: 'my complaints', tool: 'get_my_complaints', input: {}, done: 'I checked your complaints.' },
+  { keyword: 'campus', tool: 'get_campus_status', input: {}, done: 'I checked open issues on campus.' },
+  {
+    keyword: 'complain',
+    tool: 'file_complaint',
+    input: { location: 'Hostel Block A', description: 'The water cooler on the second floor is broken.' },
+    done: 'I drafted a complaint. It is waiting for your approval.',
+  },
   { keyword: 'weak', tool: 'get_weak_subjects', input: {}, done: 'I checked your weak subjects.' },
   { keyword: 'notes', tool: 'search_notes', input: { query: 'normalization' }, done: 'I searched the notes.' },
   { keyword: 'papers', tool: 'get_past_papers', input: {}, done: 'I found the past papers.' },
@@ -38,7 +47,7 @@ const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string 
 /**
  * Test double for end-to-end runs. Picks its turn by keyword in the first user
  * message. Order matters and is fixed: "fail" throws, then a lone submit_* tool,
- * then weak, notes, papers, exam, plan, marks. The first match wins.
+ * then my complaints, campus, complain, weak, notes, papers, exam, plan, marks. The first match wins.
  */
 export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {

@@ -124,4 +124,32 @@ describe("scripted model", () => {
       });
     });
   });
+
+  test("issue keywords: my complaints before complain, campus, and weak", async () => {
+    const name = async (m: string) => (await next([user(m)])).toolCalls[0]?.name;
+    expect(await name("show my complaints")).toBe("get_my_complaints");
+    expect(await name("I want to complain about my complaints")).toBe("get_my_complaints");
+    expect(await name("what is open on campus")).toBe("get_campus_status");
+    expect(await name("campus complain")).toBe("get_campus_status");
+    expect(await name("I want to complain")).toBe("file_complaint");
+    expect(await name("complain about weak wifi")).toBe("file_complaint");
+    expect(await name("campus weak marks")).toBe("get_campus_status");
+    expect(await name("my weak marks")).toBe("get_weak_subjects");
+    expect(await name("make me a plan")).toBe("create_study_plan");
+    await expect(next([user("complain, but fail")])).rejects.toThrow();
+  });
+
+  test("issue tools finish with their done texts", async () => {
+    const done = async (m: string) => {
+      const turn = await next([
+        user(m),
+        { role: "assistant", text: "", toolCalls: [{ id: "1", name: "x", input: {} }] },
+        { role: "tool", results: [{ id: "1", output: "{}", isError: false }] },
+      ]);
+      return turn.text;
+    };
+    expect(await done("my complaints")).toBe("I checked your complaints.");
+    expect(await done("campus")).toBe("I checked open issues on campus.");
+    expect(await done("complain")).toBe("I drafted a complaint. It is waiting for your approval.");
+  });
 });
