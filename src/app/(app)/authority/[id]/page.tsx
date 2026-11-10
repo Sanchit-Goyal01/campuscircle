@@ -4,13 +4,14 @@ import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
 import { formatWhen, relativeDeadline } from "../../issues/labels";
-import { TransitionButtons } from "../forms";
+import { TransitionButtons, TriageForm } from "../forms";
 
 type Issue = {
   id: string;
   title: string;
   status: string;
   severity: string | null;
+  department_id: string | null;
   needs_triage: boolean;
   report_count: number;
   due_at: string | null;
@@ -60,10 +61,11 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
-  const [issueRes, reportsRes, eventsRes] = await Promise.all([
+  const isAdmin = role === "college_admin";
+  const [issueRes, reportsRes, eventsRes, meRes, deptRes] = await Promise.all([
     me.db
       .from("issues")
-      .select("id, title, status, severity, needs_triage, report_count, due_at, escalation_level, locations(name), departments(name)")
+      .select("id, title, status, severity, department_id, needs_triage, report_count, due_at, escalation_level, locations(name), departments(name)")
       .eq("id", id)
       .maybeSingle(),
     me.db.from("issue_reports").select("id, body, photo_paths, created_at").eq("issue_id", id).order("created_at"),
@@ -72,8 +74,10 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       .select("id, kind, from_status, to_status, note, created_at")
       .eq("issue_id", id)
       .order("created_at", { ascending: false }),
+    me.db.from("profiles").select("department_id").eq("id", me.userId).maybeSingle(),
+    isAdmin ? me.db.from("departments").select("id, name").order("name") : Promise.resolve({ data: [], error: null }),
   ]);
-  for (const r of [issueRes, reportsRes, eventsRes]) {
+  for (const r of [issueRes, reportsRes, eventsRes, meRes, deptRes]) {
     if (r.error) {
       console.error("Could not load issue:", r.error.message);
       throw new Error("Could not load this issue.");
@@ -99,6 +103,10 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
   );
 
   const options = (NEXT[issue.status] ?? []).map((to) => ({ to, label: LABEL[to] }));
+  // Only an admin or an authority of the issue's department may move it; the RPC enforces the same rule.
+  const myDept = (meRes.data as { department_id: string | null } | null)?.department_id ?? null;
+  const canAct = isAdmin || (role === "authority" && !!issue.department_id && myDept === issue.department_id);
+  const departments = (deptRes.data ?? []) as { id: string; name: string }[];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -130,7 +138,13 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
           Actions
         </h2>
         {issue.needs_triage ? (
-          <p className="text-sm">Waiting for triage</p>
+          isAdmin ? (
+            <TriageForm issueId={issue.id} title={issue.title} departments={departments} />
+          ) : (
+            <p className="text-sm">Waiting for triage</p>
+          )
+        ) : !canAct ? (
+          <p className="text-sm">Only this issue&apos;s department or a college admin can change it.</p>
         ) : options.length === 0 ? (
           <p className="text-sm">No further actions for this status.</p>
         ) : (

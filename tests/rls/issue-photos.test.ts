@@ -104,6 +104,23 @@ describe("POST /api/issues/photos", () => {
     expect((await res.json()).error).toBe("Only students can upload issue photos");
   });
 
+  test("a student with 20 photos in the last 24 hours gets 429 and nothing is stored", async () => {
+    const heavy = await createStudent(`h-${tag}@${dom}`);
+    const tiny = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#000" } }).jpeg().toBuffer();
+    for (let i = 0; i < 20; i++) {
+      const up = await heavy.client.storage
+        .from("issue-photos")
+        .upload(`${college}/${crypto.randomUUID()}.jpg`, tiny, { contentType: "image/jpeg" });
+      expect(up.error).toBeNull();
+    }
+    session.ctx = { db: heavy.client, userId: heavy.id, collegeId: college, role: "student" };
+    const res = await upload([{ data: new Uint8Array(await jpegWithExif()), type: "image/jpeg" }]);
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toBe("You have uploaded too many photos today. Try again tomorrow.");
+    const listed = await heavy.client.storage.from("issue-photos").list(college, { limit: 100 });
+    expect(listed.data).toHaveLength(20);
+  });
+
   test("signed out is 401", async () => {
     session.ctx = null;
     expect((await upload([{ data: "x", type: "image/jpeg" }])).status).toBe(401);

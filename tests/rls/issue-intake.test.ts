@@ -18,6 +18,8 @@ const model = createScriptedModel();
 const file = (u: U, location_id: string, body: string) =>
   fileIssueReport({
     db: u.client,
+    admin: adminClient(),
+    studentId: u.id,
     input: { location_id, body, photo_paths: [] },
     classifier: model,
     matcher: model,

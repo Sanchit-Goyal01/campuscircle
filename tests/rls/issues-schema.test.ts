@@ -116,10 +116,10 @@ describe("issue schema", () => {
     expect(await count(admin, "issue_confirmations")).toBe(0);
   });
 
-  test("reporter reads own reporter row and own issue's reports", async () => {
+  test("reporter reads own reporter row but no report text (staff only)", async () => {
     expect(await count(reporter, "issue_reporters")).toBe(1);
     expect(await count(reporter, "issue_confirmations")).toBe(1);
-    expect(await count(reporter, "issue_reports")).toBe(1);
+    expect(await count(reporter, "issue_reports")).toBe(0);
   });
 
   test("other student of the same college cannot read issue_reports", async () => {

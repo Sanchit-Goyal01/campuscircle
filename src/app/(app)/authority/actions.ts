@@ -11,11 +11,14 @@ export type ActionState = { error?: string; ok?: boolean; message?: string };
 
 const GENERIC = "Something went wrong. Try again.";
 const DENIED = "You can't change this issue.";
+const NOTE_MAX = 1000;
+const NOTE_TOO_LONG = `Keep the note to ${NOTE_MAX} characters or fewer.`;
 const TRANSITIONS = ["assigned", "in_progress", "resolved_pending"];
 
 type Rpc = { code?: string; message: string };
 function mapError(error: Rpc): string {
   if (error.code === "42501") return DENIED;
+  if (error.code === "22001") return NOTE_TOO_LONG;
   console.error("Authority action failed:", error.message);
   return GENERIC;
 }
@@ -24,7 +27,8 @@ export async function transitionIssue(issueId: string, to: string, note: string)
   if (!UUID.test(issueId) || !TRANSITIONS.includes(to)) return { error: GENERIC };
   const me = await getProfile();
   if (!me) return { error: GENERIC };
-  const trimmed = note.trim().slice(0, 500);
+  // The SQL limit (22001) is the authority; it is mapped to NOTE_TOO_LONG.
+  const trimmed = note.trim();
   const { error } = await me.db.rpc("transition_issue", {
     p_issue: issueId,
     p_to: to,
@@ -57,6 +61,7 @@ export async function triageIssue(_prev: ActionState, formData: FormData): Promi
   });
   if (error) return { error: mapError(error) };
   revalidatePath("/authority");
+  revalidatePath(`/authority/${issueId}`);
   return { ok: true };
 }
 

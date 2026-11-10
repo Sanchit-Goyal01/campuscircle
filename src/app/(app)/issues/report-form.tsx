@@ -78,7 +78,7 @@ export function ReportForm({ locations }: { locations: Location[] }) {
         Photos
         <input name="photos" type="file" multiple accept="image/jpeg,image/png,image/webp" className={field} />
       </label>
-      <p className="text-sm">Your name is never shown to staff. Details like your room number can still identify you.</p>
+      <p className="text-sm">Your name is never shown to staff. Details like your room number can still identify you. A short title of your report is shown to all students on the campus status page, so put names and room numbers in the description only; staff alone read the description.</p>
       <div>
         <button type="submit" disabled={pending || uploading} className="border border-zinc-800 px-3 py-1 text-sm">
           {uploading ? "Uploading photos..." : pending ? "Sending..." : "Send report"}

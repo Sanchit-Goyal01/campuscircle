@@ -101,6 +101,25 @@ describe("root_cause_groups", () => {
     expect(after.data.some((g: { category: string }) => g.category === "electricity")).toBe(false);
   });
 
+  test("group with a recently dismissed insight is excluded; an old dismissal is not", async () => {
+    const { data: lc, error: le } = await adminClient().from("locations").insert({ college_id: college, name: "Canteen" }).select("id").single();
+    expect(le).toBeNull();
+    const locC = lc!.id as string;
+    await seed(locC, "furniture", 3);
+    await seed(locC, "internet", 3);
+    const dismissed = { college_id: college, location_id: locC, hypothesis: "Old fittings here.", confidence: "low", evidence_issue_ids: [], status: "dismissed" };
+    const recent = await adminClient().from("root_cause_insights").insert({ ...dismissed, category: "furniture" });
+    expect(recent.error).toBeNull();
+    const old = await adminClient()
+      .from("root_cause_insights")
+      .insert({ ...dismissed, category: "internet", created_at: new Date(Date.now() - 31 * 86_400_000).toISOString() });
+    expect(old.error).toBeNull();
+    const { data } = await authority.client.rpc("root_cause_groups");
+    const at = (c: string) => data.some((g: { location_id: string; category: string }) => g.location_id === locC && g.category === c);
+    expect(at("furniture")).toBe(false);
+    expect(at("internet")).toBe(true);
+  });
+
   test("old issues do not count, closed ones do", async () => {
     await seed(locB, "safety", 3, { ageDays: 90 });
     await seed(locB, "sanitation", 3, { status: "closed" });

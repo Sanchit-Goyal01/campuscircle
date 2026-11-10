@@ -32,8 +32,10 @@ const cls = (severity = "high", department = "Hostel") => ({
   department,
 });
 
+// submit_issue_report is service-role only; the server passes the verified student id.
 async function report(u: U, loc: string, classification: unknown = cls(), merge: string | null = null, text = body) {
-  return u.client.rpc("submit_issue_report", {
+  return adminClient().rpc("submit_issue_report", {
+    p_student_id: u.id,
     p_location: loc,
     p_body: text,
     p_photo_paths: [],
@@ -56,7 +58,7 @@ async function notifs(userId: string, kind: string, issueId: string) {
     .select("*")
     .eq("user_id", userId)
     .eq("kind", kind)
-    .eq("link", `/issues/${issueId}`);
+    .in("link", [`/issues/${issueId}`, `/authority/${issueId}`]);
   return data ?? [];
 }
 /** An in_progress Hostel issue reported by `count` fresh students. */
@@ -215,8 +217,8 @@ describe("intake", () => {
     expect((await owner.client.storage.from("issue-photos").upload(mine, png, { contentType: "image/png" })).error).toBeNull();
     expect((await other.client.storage.from("issue-photos").upload(theirs, png, { contentType: "image/png" })).error).toBeNull();
     const submit = (u: U, paths: string[]) =>
-      u.client.rpc("submit_issue_report", {
-        p_location: locA, p_body: body, p_photo_paths: paths, p_classification: cls(),
+      adminClient().rpc("submit_issue_report", {
+        p_student_id: u.id, p_location: locA, p_body: body, p_photo_paths: paths, p_classification: cls(),
         p_embedding: emb(), p_merge_issue_id: null,
       });
     for (const bad of [
@@ -245,6 +247,35 @@ describe("intake", () => {
     expect(r.error?.code).toBe("42501");
   });
 
+  test("a signed-in student cannot call submit_issue_report directly", async () => {
+    const r = await s1.client.rpc("submit_issue_report", {
+      p_student_id: s1.id, p_location: locA, p_body: body, p_photo_paths: [],
+      p_classification: cls("critical"), p_embedding: emb(), p_merge_issue_id: null,
+    });
+    expect(r.error?.code).toBe("42501");
+  });
+
+  test("merge into an untriaged issue creates a new issue", async () => {
+    const untriaged = (await report(await newStudent(), locA, null)).data.issue_id;
+    const r = await report(await newStudent(), locA, cls(), untriaged);
+    expect(r.error).toBeNull();
+    expect(r.data.merged).toBe(false);
+    expect(r.data.issue_id).not.toBe(untriaged);
+    expect((await issueOf(untriaged)).report_count).toBe(1);
+  });
+
+  test("staff notifications link to the authority page; student ones to the issue page", async () => {
+    const s = await newStudent();
+    const id = (await report(s, locA)).data.issue_id;
+    const staff = await adminClient().from("notifications").select("link").eq("user_id", authHostel.id).eq("kind", "issue_new").like("link", `%${id}`);
+    expect(staff.data).toEqual([{ link: `/authority/${id}` }]);
+    const mine = await adminClient().from("notifications").select("link").eq("user_id", s.id).like("link", `%${id}`);
+    expect(mine.data).toEqual([{ link: `/issues/${id}` }]);
+    const untriaged = (await report(await newStudent(), locA, null)).data.issue_id;
+    const adm = await adminClient().from("notifications").select("link").eq("user_id", admin.id).like("link", `%${untriaged}`);
+    expect(adm.data).toEqual([{ link: `/authority/${untriaged}` }]);
+  });
+
   test("match_open_issues returns candidates from the callers location only", async () => {
     const s = await newStudent();
     const fresh = await adminClient().from("locations").insert({ college_id: collegeA, name: `Fresh ${run}` }).select("id").single();
@@ -264,6 +295,15 @@ describe("transitions", () => {
     const { issueId } = await makeIssue(1);
     const r = await authIT.client.rpc("transition_issue", { p_issue: issueId, p_to: "in_progress" });
     expect(r.error?.code).toBe("42501");
+  });
+
+  test("a staff note longer than 1000 characters is refused with 22001", async () => {
+    const { issueId } = await makeIssue(1);
+    const long = await authHostel.client.rpc("transition_issue", { p_issue: issueId, p_to: "in_progress", p_note: "x".repeat(1001) });
+    expect(long.error?.code).toBe("22001");
+    expect((await issueOf(issueId)).status).toBe("open");
+    const ok = await authHostel.client.rpc("transition_issue", { p_issue: issueId, p_to: "in_progress", p_note: "x".repeat(1000) });
+    expect(ok.error).toBeNull();
   });
 
   test("authority cannot set closed", async () => {
@@ -408,6 +448,20 @@ describe("jobs and metrics", () => {
     expect(ev.data).toHaveLength(2);
   });
 
+  test("level-1 escalation with no department head notifies the college admins", async () => {
+    const id = (await report(await newStudent(), locA, cls("high", "IT Services"))).data.issue_id;
+    const r = await adminClient().rpc("run_issue_jobs", {
+      p_now: new Date(Date.now() + 100 * 3600_000).toISOString(),
+      p_college: collegeA,
+    });
+    expect(r.error).toBeNull();
+    expect((await issueOf(id)).escalation_level).toBe(1);
+    const n = await notifs(admin.id, "issue_escalated", id);
+    expect(n).toHaveLength(1);
+    expect(n[0].link).toBe(`/authority/${id}`);
+    expect(await notifs(authIT.id, "issue_escalated", id)).toHaveLength(0);
+  });
+
   test("job tallies resolved_pending issues older than 72h", async () => {
     const { issueId } = await makeIssue(1);
     await resolvePending(issueId);
@@ -481,6 +535,35 @@ describe("anonymity", () => {
     // Notification text for staff never names students either.
     const staff = await adminClient().from("notifications").select("title, body").eq("user_id", authHostel.id);
     expect(JSON.stringify(staff.data)).not.toMatch(/@/);
+  });
+});
+
+describe("co-reporter privacy", () => {
+  test("a merged co-reporter cannot read any report text or the other student's photo", async () => {
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+    const a = await newStudent();
+    const b = await newStudent();
+    const path = `${collegeA}/c1-${run}/a.png`;
+    expect((await a.client.storage.from("issue-photos").upload(path, png, { contentType: "image/png" })).error).toBeNull();
+    const first = await adminClient().rpc("submit_issue_report", {
+      p_student_id: a.id, p_location: locA, p_body: "Priya, room 214: the tap is leaking.", p_photo_paths: [path],
+      p_classification: cls(), p_embedding: emb(), p_merge_issue_id: null,
+    });
+    expect(first.error).toBeNull();
+    const id = first.data.issue_id;
+    const second = await report(b, locA, cls(), id);
+    expect(second.data.merged).toBe(true);
+
+    for (const u of [a, b]) {
+      const { data, error } = await u.client.from("issue_reports").select("body, photo_paths").eq("issue_id", id);
+      expect(error).toBeNull();
+      expect(data).toEqual([]);
+    }
+    expect((await b.client.storage.from("issue-photos").download(path)).error).not.toBeNull();
+    expect((await b.client.storage.from("issue-photos").createSignedUrl(path, 60)).error).not.toBeNull();
+    // Staff still read both reports.
+    const staff = await authHostel.client.from("issue_reports").select("id").eq("issue_id", id);
+    expect(staff.data).toHaveLength(2);
   });
 });
 

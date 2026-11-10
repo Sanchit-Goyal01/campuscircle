@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { errorResponse, signedOut, unexpected } from '@/agent/api';
 import { getToolContext } from '@/lib/supabase/server';
 import { badRequest } from '@/modules/academics/http';
@@ -12,12 +13,29 @@ const TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const BAD_TYPE = 'Photos must be JPEG, PNG or WebP';
 const TOO_BIG = 'Each photo must be 8 MB or less';
 const TOO_MANY = 'At most 3 photos';
+const DAILY_PHOTOS = 20;
+const DAILY_LIMIT = 'You have uploaded too many photos today. Try again tomorrow.';
+
+/**
+ * Photos this student stored in the last 24 hours, read through their own
+ * client: the storage select policy shows a student only their own objects.
+ * Route uploads live directly under `<college>/`, newest first.
+ */
+async function photosToday(db: SupabaseClient, collegeId: string): Promise<number> {
+  const { data, error } = await db.storage
+    .from('issue-photos')
+    .list(collegeId, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+  if (error) throw new Error(`Could not count photos: ${error.message}`);
+  const since = Date.now() - 24 * 3600_000;
+  return (data ?? []).filter((o) => o.id && o.created_at && new Date(o.created_at).getTime() > since).length;
+}
 
 export async function POST(request: Request) {
   try {
     const ctx = await getToolContext();
     if (!ctx) return signedOut();
     if (ctx.role !== 'student') return errorResponse(403, 'Only students can upload issue photos');
+    if ((await photosToday(ctx.db, ctx.collegeId)) >= DAILY_PHOTOS) return errorResponse(429, DAILY_LIMIT);
 
     if (Number(request.headers.get('content-length')) > MAX_REQUEST_BYTES) return badRequest(TOO_BIG);
 

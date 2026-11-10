@@ -8,7 +8,8 @@ const slow = expect.configure({ timeout: 25_000 });
 const PASSWORD = "e2e-password-123!";
 const COLLEGE = "00000000-0000-0000-0000-00000000a001";
 const REPORT = "The water cooler on the second floor corridor is leaking all over the floor.";
-const WARNING = "Your name is never shown to staff. Details like your room number can still identify you.";
+const WARNING =
+  "Your name is never shown to staff. Details like your room number can still identify you. A short title of your report is shown to all students on the campus status page, so put names and room numbers in the description only; staff alone read the description.";
 
 const png = () =>
   sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 30, b: 30 } } })

@@ -4,6 +4,7 @@ import { getModelClient } from '../../agent/model';
 import type { AgentTool } from '../../agent/types';
 import { edgeEmbedder } from '../academics/embed';
 import { fileIssueReport } from './intake';
+import { issueAdminDb } from './submit';
 
 const RATE_LIMITED = 'You have filed 5 reports in the last 24 hours. Try again later.';
 const OPEN_STATUSES = ['open', 'assigned', 'in_progress', 'resolved_pending'];
@@ -37,12 +38,16 @@ export const fileComplaint: AgentTool<z.infer<typeof complaintInput>> = {
   roles: ['student'],
   input: complaintInput,
   async run(input, ctx) {
+    // ctx comes from the student's own session; the model never supplies an id.
+    if (ctx.role !== 'student') throw new Error('Only students can file reports.');
     const locs = await collegeLocations(ctx.db);
     const loc = findLocation(locs, input.location);
     if (!loc) throw unknownLocation(locs);
     try {
       return await fileIssueReport({
         db: ctx.db,
+        admin: issueAdminDb(),
+        studentId: ctx.userId,
         input: { location_id: loc.id, body: input.description, photo_paths: [] },
         classifier: getModelClient('classifier'),
         matcher: getModelClient(),
@@ -78,16 +83,23 @@ export const getMyComplaints: AgentTool<Record<string, never>> = {
       .slice(0, 20);
     if (issues.length === 0) return [];
 
-    const { data: events, error: evError } = await ctx.db
-      .from('issue_events')
-      .select('issue_id, kind, created_at')
-      .in('issue_id', issues.map((i) => i.id))
-      .order('created_at', { ascending: false });
-    if (evError) throw new Error(`Could not read complaint events: ${evError.message}`);
+    // Newest event per issue: one small query each (at most 20), never the full log.
+    const latest = await Promise.all(
+      issues.map((i) =>
+        ctx.db
+          .from('issue_events')
+          .select('kind, created_at')
+          .eq('issue_id', i.id)
+          .order('created_at', { ascending: false })
+          .limit(1),
+      ),
+    );
     const last = new Map<string, { kind: string; at: string }>();
-    for (const e of (events ?? []) as { issue_id: string; kind: string; created_at: string }[]) {
-      if (!last.has(e.issue_id)) last.set(e.issue_id, { kind: e.kind, at: e.created_at });
-    }
+    latest.forEach((res, idx) => {
+      if (res.error) throw new Error(`Could not read complaint events: ${res.error.message}`);
+      const e = (res.data ?? [])[0] as { kind: string; created_at: string } | undefined;
+      if (e) last.set(issues[idx].id, { kind: e.kind, at: e.created_at });
+    });
     return issues.map((i) => ({
       id: i.id as string,
       title: i.title as string,
@@ -101,11 +113,12 @@ export const getMyComplaints: AgentTool<Record<string, never>> = {
 };
 
 const statusInput = z.strictObject({ location: z.string().trim().min(1).optional() });
+const STATUS_CAP = 200;
 
 export const getCampusStatus: AgentTool<z.infer<typeof statusInput>> = {
   name: 'get_campus_status',
   description:
-    'List open campus issues in the signed-in user\'s college, grouped by location, optionally for one location. Includes no personal information.',
+    'List open campus issues in the signed-in user\'s college, grouped by location, optionally for one location. Returns at most the 200 newest issues; `truncated` is true when there are more. Includes no personal information.',
   kind: 'read',
   roles: ['student', 'society_admin', 'authority', 'college_admin'],
   input: statusInput,
@@ -122,12 +135,14 @@ export const getCampusStatus: AgentTool<z.infer<typeof statusInput>> = {
       .select('title, category, severity, status, report_count, created_at, locations(name)')
       .in('status', OPEN_STATUSES)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(STATUS_CAP + 1);
     if (locationId) q = q.eq('location_id', locationId);
     const { data, error } = await q;
     if (error) throw new Error(`Could not read campus issues: ${error.message}`);
+    const rows = (data ?? []) as any[];
+    const truncated = rows.length > STATUS_CAP;
     const groups = new Map<string, unknown[]>();
-    for (const r of (data ?? []) as any[]) {
+    for (const r of rows.slice(0, STATUS_CAP)) {
       const name = (one<any>(r.locations)?.name ?? 'Unknown') as string;
       const list = groups.get(name) ?? [];
       list.push({
@@ -139,8 +154,9 @@ export const getCampusStatus: AgentTool<z.infer<typeof statusInput>> = {
       });
       groups.set(name, list);
     }
-    return [...groups.entries()]
+    const locations = [...groups.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([location, issues]) => ({ location, issues }));
+    return { truncated, locations };
   },
 };

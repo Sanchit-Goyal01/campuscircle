@@ -72,8 +72,8 @@ create policy root_cause_insights_update on public.root_cause_insights
 
 -- Repeated issues: 3 or more in the same place and category in the last 60
 -- days, any status (a closed issue that keeps coming back is the signal).
--- Skips places that already have a proposed or accepted insight from the last
--- 30 days. Security invoker: RLS keeps rows inside the caller's college.
+-- Skips places that already have a proposed, accepted or dismissed insight from
+-- the last 30 days (a dismissal is not re-proposed right away). Security invoker: RLS keeps rows inside the caller's college.
 create function public.root_cause_groups()
 returns table (location_id uuid, location text, category text, issue_ids uuid[], titles text[])
 language plpgsql
@@ -101,7 +101,7 @@ begin
          where r.college_id = public.current_college_id()
            and r.location_id = i.location_id
            and r.category = i.category
-           and r.status in ('proposed', 'accepted')
+           and r.status in ('proposed', 'accepted', 'dismissed')
            and r.created_at > now() - interval '30 days'
        )
     order by count(*) desc, l.name, i.category

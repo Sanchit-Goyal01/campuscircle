@@ -15,7 +15,7 @@ export function TransitionButtons({ issueId, options }: { issueId: string; optio
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1 text-sm">
         Note (optional)
-        <input value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} className={input} />
+        <input value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} className={input} />
       </label>
       <div className="flex flex-wrap gap-3">
         {options.map((o) => (

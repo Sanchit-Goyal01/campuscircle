@@ -179,18 +179,14 @@ create policy issues_select on public.issues
 create policy issue_events_select on public.issue_events
   for select to authenticated using (college_id = (select public.current_college_id()));
 
+-- Report text and photo paths are staff-only. Students never read issue_reports,
+-- not even their own: a reporter branch would let co-reporters of a merged issue
+-- read each other's text.
 create policy issue_reports_select on public.issue_reports
   for select to authenticated
   using (
     college_id = (select public.current_college_id())
-    and (
-      (select public.app_role_of_user()) in ('authority', 'college_admin')
-      or exists (
-        select 1 from public.issue_reporters r
-        where r.issue_id = issue_reports.issue_id
-          and r.student_id = (select auth.uid())
-      )
-    )
+    and (select public.app_role_of_user()) in ('authority', 'college_admin')
   );
 
 create policy issue_reporters_select on public.issue_reporters
@@ -248,6 +244,7 @@ create policy issue_photos_insert on storage.objects
     and (select public.app_role_of_user()) = 'student'
     and owner_id = (select auth.uid())::text
   );
+-- Students read only their own uploads; staff read their college's folder.
 create policy issue_photos_select on storage.objects
   for select to authenticated
   using (

@@ -22,6 +22,8 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 Note search and study help also need the embed function: run `npm run dev:functions` alongside `npm run dev`.
 
+Issue reporting needs `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`. It is server-only (used solely by `src/modules/issues/submit.ts`); never expose it to the browser or commit it.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

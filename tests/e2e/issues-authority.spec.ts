@@ -109,15 +109,28 @@ test("filter by severity narrows the queue", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Flickering corridor bulb" })).toHaveCount(0);
 });
 
-test("IT authority sees the Hostel issue but gets an error on transition", async ({ page }) => {
+// The RPC refusal itself is covered by tests/rls/issue-lifecycle.test.ts ("IT authority cannot transition").
+test("IT authority sees the Hostel issue but no transition buttons", async ({ page }) => {
   const id = await seedIssue({ department: "Hostel" });
   await signIn(page, await newUser("authority", "IT Services"));
   await page.goto(`/authority/${id}`);
   await expect(page.getByText(BODY)).toBeVisible();
-  await page.getByRole("button", { name: "Mark In progress" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "You can't change this issue." })).toBeVisible();
-  const { data } = await adminClient().from("issues").select("status").eq("id", id).single();
-  expect(data?.status).toBe("open");
+  await expect(page.getByText("Only this issue's department or a college admin can change it.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Mark / })).toHaveCount(0);
+});
+
+test("admin triages an untriaged report from its detail page", async ({ page }) => {
+  const id = await seedIssue({ title: "Untriaged report", needsTriage: true, severity: null });
+  await signIn(page, await newUser("college_admin"));
+  await page.goto(`/authority/${id}`);
+  await page.getByLabel("Department").selectOption({ label: "Hostel" });
+  await page.getByLabel("Category").selectOption("water");
+  await page.getByLabel("Severity").selectOption("high");
+  await page.getByLabel("Title").fill("Leaking cooler in corridor");
+  await page.getByRole("button", { name: "Route issue" }).click();
+  await expect(page.getByRole("button", { name: "Mark In progress" })).toBeVisible();
+  const { data } = await adminClient().from("issues").select("needs_triage").eq("id", id).single();
+  expect(data?.needs_triage).toBe(false);
 });
 
 test("admin triages an untriaged report to Maintenance", async ({ page }) => {

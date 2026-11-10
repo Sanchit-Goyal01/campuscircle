@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { supabaseEnv } from "./tests/helpers/supabase";
+
+// Issue intake runs submit_issue_report through the server-only service-role
+// client (src/modules/issues/submit.ts); hand the local key to both servers.
+const serverEnv = { SUPABASE_SERVICE_ROLE_KEY: supabaseEnv().service };
 
 const authPort = 3100;
 const agentPort = 3101;
@@ -37,13 +42,14 @@ export default defineConfig({
     {
       command: `npm run build && npx next start -p ${authPort}`,
       url: `http://localhost:${authPort}/sign-in`,
+      env: serverEnv,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
       command: `npx next dev -p ${agentPort}`,
       url: `http://localhost:${agentPort}/sign-in`,
-      env: { AGENT_TEST_MODEL: "1" },
+      env: { ...serverEnv, AGENT_TEST_MODEL: "1" },
       // Never reuse: a server started without AGENT_TEST_MODEL would call the real model.
       reuseExistingServer: false,
       timeout: 120_000,

@@ -4,6 +4,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 type Env = { url: string; anon: string; service: string };
 let cached: Env | undefined;
 
+/** Local Supabase URL and keys (from env, else `supabase status`). Never print these. */
+export function supabaseEnv(): Env {
+  return env();
+}
+
 function env(): Env {
   if (cached) return cached;
   const e = process.env;

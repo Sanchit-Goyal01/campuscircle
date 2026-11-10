@@ -2,6 +2,7 @@
 -- deadline job, and metrics. These security definer RPCs are the only write
 -- path to the issue tables. Student identity is never written to events or
 -- notification text; reporters are reached only by notifications inserted here.
+-- Notification links: staff go to /authority/<id>, students to /issues/<id>.
 
 -- Rolling log for the 5-reports-per-24h limit. issue_reports has no reporter
 -- column (reporter privacy), so the counter lives here. No client access.
@@ -48,6 +49,7 @@ as $$
     and i.location_id = p_location
     and i.created_at > now() - interval '14 days'
     and i.status in ('open', 'assigned', 'in_progress')
+    and not i.needs_triage
     and i.embedding is not null
     and p_embedding is not null
   order by i.embedding <=> p_embedding
@@ -56,7 +58,11 @@ $$;
 revoke all on function public.match_open_issues(uuid, extensions.vector, int) from public, anon;
 grant execute on function public.match_open_issues(uuid, extensions.vector, int) to authenticated;
 
+-- Service role only. The server verifies the student's session, runs the
+-- classifier and matcher itself, and passes the verified student id; a client
+-- can never choose the classification, embedding or merge target.
 create function public.submit_issue_report(
+  p_student_id uuid,
   p_location uuid,
   p_body text,
   p_photo_paths text[],
@@ -70,9 +76,9 @@ security definer
 set search_path = public, extensions
 as $$
 declare
-  v_uid uuid := auth.uid();
-  v_college uuid := public.current_college_id();
-  v_role public.app_role := public.app_role_of_user();
+  v_uid uuid := p_student_id;
+  v_college uuid;
+  v_role public.app_role;
   v_photos text[] := coalesce(p_photo_paths, '{}');
   v_path text;
   v_title text;
@@ -85,6 +91,9 @@ declare
   v_merged boolean := false;
   v_new_reporter boolean := false;
 begin
+  -- Verified student: a profile row (created only after email confirmation) with role student.
+  select p.college_id, p.role into v_college, v_role
+  from public.profiles p where p.id = v_uid;
   if v_uid is null or v_college is null or v_role is distinct from 'student' then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
@@ -136,6 +145,7 @@ begin
       into v_title from public.locations l where l.id = p_location;
   end if;
 
+  -- Re-check the matcher's pick; anything else becomes a new issue.
   if p_merge_issue_id is not null then
     select * into v_issue from public.issues i
     where i.id = p_merge_issue_id
@@ -143,6 +153,7 @@ begin
       and i.location_id = p_location
       and i.created_at > now() - interval '14 days'
       and i.status in ('open', 'assigned', 'in_progress')
+      and not i.needs_triage
     for update;
     v_merged := found;
   end if;
@@ -191,7 +202,7 @@ begin
               when v_merged then 'Another report on an issue'
               else 'New issue reported' end,
          v_issue.title,
-         '/issues/' || v_issue.id
+         '/authority/' || v_issue.id
   from public.profiles p
   where p.college_id = v_college
     and ((v_issue.needs_triage and p.role = 'college_admin')
@@ -206,8 +217,10 @@ begin
                             'needs_triage', v_issue.needs_triage);
 end;
 $$;
-revoke all on function public.submit_issue_report(uuid, text, text[], jsonb, extensions.vector, uuid) from public, anon;
-grant execute on function public.submit_issue_report(uuid, text, text[], jsonb, extensions.vector, uuid) to authenticated;
+revoke all on function public.submit_issue_report(uuid, uuid, text, text[], jsonb, extensions.vector, uuid)
+  from public, anon, authenticated;
+grant execute on function public.submit_issue_report(uuid, uuid, text, text[], jsonb, extensions.vector, uuid)
+  to service_role;
 
 create function public.transition_issue(
   p_issue uuid,
@@ -243,6 +256,10 @@ begin
     if v_issue.department_id is null or v_dept is distinct from v_issue.department_id then
       raise exception 'insufficient_privilege' using errcode = '42501';
     end if;
+  end if;
+  -- Students see the note in the timeline; keep it short.
+  if char_length(p_note) > 1000 then
+    raise exception 'note_too_long' using errcode = '22001';
   end if;
   if not ((v_issue.status = 'open' and p_to = 'assigned')
        or (v_issue.status in ('open', 'assigned') and p_to = 'in_progress')
@@ -318,7 +335,7 @@ begin
 
   insert into public.notifications (user_id, college_id, kind, title, body, link)
   select p.id, v_college, 'issue_new', 'New issue assigned to your department',
-         left(btrim(p_title), 200), '/issues/' || p_issue
+         left(btrim(p_title), 200), '/authority/' || p_issue
   from public.profiles p
   where p.college_id = v_college and p.role = 'authority' and p.department_id = p_department;
 end;
@@ -386,7 +403,7 @@ begin
     -- Staff learn it was reopened, with no vote detail.
     insert into public.notifications (user_id, college_id, kind, title, body, link)
     select p.id, v_issue.college_id, 'issue_reopened', 'Issue reopened',
-           '"' || v_issue.title || '" was reported as not fixed.', '/issues/' || p_issue
+           '"' || v_issue.title || '" was reported as not fixed.', '/authority/' || p_issue
     from public.profiles p
     where p.college_id = v_issue.college_id and p.role = 'authority'
       and p.department_id = v_issue.department_id;
@@ -452,6 +469,7 @@ as $$
 declare
   v_issue public.issues;
   v_level smallint;
+  v_has_head boolean;
   v_escalated int := 0;
   v_tallied int := 0;
   v_id uuid;
@@ -472,13 +490,19 @@ begin
     where id = v_issue.id;
     insert into public.issue_events (issue_id, college_id, kind, note)
     values (v_issue.id, v_issue.college_id, 'escalated', 'level ' || v_level);
+    -- Level 1 goes to the department head; with no head, to the college admins.
+    v_has_head := exists (
+      select 1 from public.profiles h
+      where h.college_id = v_issue.college_id and h.role = 'authority'
+        and h.is_department_head and h.department_id = v_issue.department_id);
     insert into public.notifications (user_id, college_id, kind, title, body, link)
     select p.id, v_issue.college_id, 'issue_escalated', 'Issue past its deadline',
-           v_issue.title, '/issues/' || v_issue.id
+           v_issue.title, '/authority/' || v_issue.id
     from public.profiles p
     where p.college_id = v_issue.college_id
-      and ((v_level = 1 and p.role = 'authority' and p.is_department_head
+      and ((v_level = 1 and v_has_head and p.role = 'authority' and p.is_department_head
             and p.department_id = v_issue.department_id)
+           or (v_level = 1 and not v_has_head and p.role = 'college_admin')
            or (v_level = 2 and p.role = 'college_admin'));
     v_escalated := v_escalated + 1;
   end loop;

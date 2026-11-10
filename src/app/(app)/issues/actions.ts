@@ -7,6 +7,7 @@ import { edgeEmbedder } from "@/modules/academics/embed";
 import { UUID } from "@/modules/academics/http";
 import { fileIssueReport } from "@/modules/issues/intake";
 import { ReportInputSchema } from "@/modules/issues/schema";
+import { issueAdminDb } from "@/modules/issues/submit";
 
 export type ReportState = {
   error?: string;
@@ -23,6 +24,8 @@ const RATE_LIMITED = "You have filed 5 reports in the last 24 hours. Try again l
 export async function submitReport(_prev: ReportState, formData: FormData): Promise<ReportState> {
   const me = await getProfile();
   if (!me) return { error: GENERIC };
+  // The session is verified here; only its user id reaches the service-role RPC.
+  if (me.profile.role !== "student") return { error: "Only students can file reports." };
 
   const photos = String(formData.get("photo_paths") ?? "");
   const parsed = ReportInputSchema.safeParse({
@@ -44,6 +47,8 @@ export async function submitReport(_prev: ReportState, formData: FormData): Prom
   try {
     result = await fileIssueReport({
       db: me.db,
+      admin: issueAdminDb(),
+      studentId: me.userId,
       input: parsed.data,
       classifier: getModelClient("classifier"),
       matcher: getModelClient(),
