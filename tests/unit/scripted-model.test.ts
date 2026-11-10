@@ -13,6 +13,26 @@ describe("scripted model", () => {
     expect(turn.toolCalls.map((c) => c.name)).toEqual(["get_marks"]);
   });
 
+  test.each([
+    ["which subjects are my WEAK ones", "get_weak_subjects", {}],
+    ["find notes on normalization", "search_notes", { query: "normalization" }],
+    ["any past papers?", "get_past_papers", {}],
+    ["when is my next exam", "get_timetable", {}],
+  ])('"%s" calls %s', async (message, name, input) => {
+    const turn = await next([user(message)]);
+    expect(turn.toolCalls.map((c) => c.name)).toEqual([name]);
+    expect(turn.toolCalls[0].input).toEqual(input);
+  });
+
+  test("read keywords win over plan and marks, in a fixed order, but not over fail", async () => {
+    const name = async (m: string) => (await next([user(m)])).toolCalls[0]?.name;
+    expect(await name("plan from my weak marks")).toBe("get_weak_subjects");
+    expect(await name("plan for exam marks")).toBe("get_timetable");
+    expect(await name("notes and papers")).toBe("search_notes");
+    expect(await name("papers and exam")).toBe("get_past_papers");
+    await expect(next([user("weak, but fail")])).rejects.toThrow();
+  });
+
   test('"plan" sends a valid create_study_plan input', async () => {
     const turn = await next([user("make me a plan")]);
     expect(turn.toolCalls[0].name).toBe("create_study_plan");

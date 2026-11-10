@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { AgentTool } from '../../agent/types';
-import { agentToday } from '../../lib/today';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { addDays, agentToday } from '../../lib/today';
+import { edgeEmbedder, type Embedder } from './embed';
+import { weakSubjects, type ResultRow } from './gpa';
 
 const realDate = z
   .string()
@@ -98,3 +101,188 @@ export function createStudyPlanTool(
 }
 
 export const createStudyPlan = createStudyPlanTool();
+
+const one = <T>(v: T | T[] | null | undefined): T | undefined => (Array.isArray(v) ? v[0] : (v ?? undefined));
+
+export const getWeakSubjects: AgentTool<Record<string, never>> = {
+  name: 'get_weak_subjects',
+  description:
+    "List the signed-in student's weak subjects: those whose latest marks are below their own average, weakest first, with a trend.",
+  kind: 'read',
+  roles: ['student', 'society_admin'],
+  input: z.strictObject({}),
+  async run(_input, ctx) {
+    const { data, error } = await ctx.db
+      .from('subject_results')
+      .select('semester, marks, grade_points, subjects(name, credits)')
+      .eq('student_id', ctx.userId);
+    if (error) throw new Error(`Could not read marks: ${error.message}`);
+    const rows: ResultRow[] = (data ?? []).map((r: any) => {
+      const subj = one<any>(r.subjects);
+      return {
+        semester: r.semester,
+        subject: subj?.name ?? '',
+        credits: subj?.credits ?? 0,
+        marks: r.marks,
+        grade_points: r.grade_points,
+      };
+    });
+    const graded = rows.filter((r) => r.marks !== null) as (ResultRow & { marks: number })[];
+    const average =
+      graded.length === 0
+        ? null
+        : Math.round((graded.reduce((s, r) => s + r.marks, 0) / graded.length) * 100) / 100;
+    const subjects = weakSubjects(rows)
+      .map(({ subject, semester, marks, trend }) => ({ subject, semester, marks, trend }))
+      .sort((a, b) => a.marks - b.marks || a.subject.localeCompare(b.subject));
+    return { average, subjects };
+  },
+};
+
+/** Ids of the college's subjects whose code or name equals `text`, ignoring case. RLS limits rows to the college. */
+async function subjectIds(db: SupabaseClient, text: string): Promise<string[]> {
+  const { data, error } = await db.from('subjects').select('id, code, name');
+  if (error) throw new Error(`Could not read subjects: ${error.message}`);
+  const want = text.trim().toLowerCase();
+  const rows = (data ?? []) as { id: string; code: string; name: string }[];
+  const byCode = rows.filter((s) => s.code.toLowerCase() === want);
+  return (byCode.length ? byCode : rows.filter((s) => s.name.toLowerCase() === want)).map((s) => s.id);
+}
+
+const searchNotesInput = z.strictObject({
+  query: z.string().trim().min(1).max(500),
+  subject: z.string().trim().min(1).optional(),
+});
+
+const MAX_NOTE_RESULTS = 6;
+const MAX_EXCERPT = 600;
+
+export function createSearchNotesTool(
+  embed: Embedder = edgeEmbedder,
+): AgentTool<z.infer<typeof searchNotesInput>> {
+  return {
+    name: 'search_notes',
+    description:
+      "Search the college's study notes by meaning. Returns excerpts with note title and page. Optionally limit to one subject by code or name.",
+    kind: 'read',
+    roles: ['student', 'society_admin'],
+    input: searchNotesInput,
+    async run(input, ctx) {
+      let filters: (string | null)[] = [null];
+      if (input.subject !== undefined) {
+        const ids = await subjectIds(ctx.db, input.subject);
+        if (ids.length === 0) return [];
+        filters = ids;
+      }
+      const [vector] = await embed(ctx.db, [input.query]);
+      if (!vector) throw new Error('Embedding failed: no vector returned');
+      const hits: { note_id: string; title: string; page: number; content: string; similarity: number }[] = [];
+      for (const filter of filters) {
+        const { data, error } = await ctx.db.rpc('match_note_chunks', {
+          query_embedding: JSON.stringify(vector),
+          match_count: MAX_NOTE_RESULTS,
+          filter_subject: filter,
+        });
+        if (error) throw new Error(`Could not search notes: ${error.message}`);
+        hits.push(...(data ?? []));
+      }
+      return hits
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, MAX_NOTE_RESULTS)
+        .map((h) => ({
+          note_id: h.note_id,
+          title: h.title,
+          page: h.page,
+          excerpt: h.content.slice(0, MAX_EXCERPT),
+        }));
+    },
+  };
+}
+
+export const searchNotes = createSearchNotesTool();
+
+const getPastPapersInput = z.strictObject({
+  subject: z.string().trim().min(1).optional(),
+  year: z.number().int().optional(),
+});
+
+export const getPastPapers: AgentTool<z.infer<typeof getPastPapersInput>> = {
+  name: 'get_past_papers',
+  description:
+    "List the college's past exam papers, newest first, optionally for one subject (code or name) and year.",
+  kind: 'read',
+  roles: ['student', 'society_admin'],
+  input: getPastPapersInput,
+  async run(input, ctx) {
+    let q = ctx.db
+      .from('past_papers')
+      .select('id, year, exam_type, subjects(name)')
+      .order('year', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (input.subject !== undefined) {
+      const ids = await subjectIds(ctx.db, input.subject);
+      if (ids.length === 0) return [];
+      q = q.in('subject_id', ids);
+    }
+    if (input.year !== undefined) q = q.eq('year', input.year);
+    const { data, error } = await q;
+    if (error) throw new Error(`Could not read past papers: ${error.message}`);
+    return (data ?? []).map((r: any) => ({
+      paper_id: r.id as string,
+      subject: (one<any>(r.subjects)?.name ?? '') as string,
+      year: r.year as number,
+      exam_type: r.exam_type as string,
+    }));
+  },
+};
+
+const getTimetableInput = z
+  .strictObject({ from: realDate.optional(), to: realDate.optional() })
+  .refine((v) => !v.from || !v.to || v.from <= v.to, { error: 'from must not be after to' });
+
+const hhmm = (t: string | null) => (t === null ? null : t.slice(0, 5));
+const daysBetween = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
+export const getTimetable: AgentTool<z.infer<typeof getTimetableInput>> = {
+  name: 'get_timetable',
+  description:
+    "Get the signed-in student's weekly classes and the exams in a date range (default: today to 30 days ahead). weekday is 1 = Monday to 7 = Sunday.",
+  kind: 'read',
+  roles: ['student', 'society_admin'],
+  input: getTimetableInput,
+  async run(input, ctx) {
+    const today = agentToday();
+    const from = input.from ?? today;
+    const to = input.to ?? addDays(from, 30);
+    const { data, error } = await ctx.db
+      .from('timetable_entries')
+      .select('kind, weekday, exam_date, start_time, end_time, location, subjects(name)')
+      .eq('student_id', ctx.userId);
+    if (error) throw new Error(`Could not read timetable: ${error.message}`);
+    const rows = (data ?? []) as any[];
+    const name = (r: any) => (one<any>(r.subjects)?.name ?? null) as string | null;
+    const classes = rows
+      .filter((r) => r.kind === 'class')
+      .map((r) => ({
+        weekday: r.weekday as number,
+        start_time: hhmm(r.start_time) as string,
+        end_time: hhmm(r.end_time),
+        subject: name(r),
+        location: (r.location ?? null) as string | null,
+      }))
+      .sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time));
+    const exams = rows
+      .filter((r) => r.kind === 'exam' && r.exam_date >= from && r.exam_date <= to)
+      .map((r) => ({
+        exam_date: r.exam_date as string,
+        start_time: hhmm(r.start_time) as string,
+        subject: name(r),
+        location: (r.location ?? null) as string | null,
+        days_left: daysBetween(today, r.exam_date),
+      }))
+      .sort((a, b) => a.exam_date.localeCompare(b.exam_date) || a.start_time.localeCompare(b.start_time));
+    return { classes, exams };
+  },
+};

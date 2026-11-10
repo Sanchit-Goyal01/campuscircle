@@ -3,6 +3,10 @@ import { humanizeToolName, type TraceStep } from './types';
 const TOOL_LABELS: Record<string, string> = {
   get_marks: 'Read your marks',
   create_study_plan: 'Drafted a study plan',
+  get_weak_subjects: 'Checked your weak subjects',
+  search_notes: 'Searched notes',
+  get_past_papers: 'Found past papers',
+  get_timetable: 'Read your timetable',
 };
 
 type Outcome = { status?: string; result?: unknown; message?: string };
