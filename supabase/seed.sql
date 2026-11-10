@@ -69,3 +69,17 @@ values (
   'Sixth edition of the DBMS textbook by Korth, Silberschatz and Sudarshan. Some highlighting in the first chapters, no torn pages.',
   450, 'good'
 ) on conflict do nothing;
+
+-- Demo events, relative to now() so they are always upcoming. Created by the
+-- seeded demo student account, whose role does not matter for a seed insert.
+insert into public.events (id, college_id, created_by, title, description, venue, starts_at, ends_at, capacity)
+values
+  ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-00000000a001',
+   '00000000-0000-0000-0000-0000000000a9', 'DBMS revision workshop',
+   'Normalisation, transactions and SQL practice before the exam. Bring your notes.',
+   'Seminar Hall 2', now() + interval '3 days', now() + interval '3 days 2 hours', 40),
+  ('00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-00000000a001',
+   '00000000-0000-0000-0000-0000000000a9', 'Hostel sports night',
+   'Indoor games and a relay race for all hostel residents.',
+   'Sports Complex', now() + interval '10 days', now() + interval '10 days 3 hours', null)
+on conflict do nothing;

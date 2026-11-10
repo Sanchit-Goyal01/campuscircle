@@ -7,6 +7,7 @@ import {
   getWeakSubjects,
   searchNotes,
 } from './academics/tools';
+import { registerForEvent, searchEvents } from './events/tools';
 import { fileComplaint, getCampusStatus, getMyComplaints } from './issues/tools';
 import { searchListingsTool } from './market/tools';
 import { findMentor, findTeammates, getMyProfile, requestMentorship } from './people/tools';
@@ -26,4 +27,6 @@ export const allTools: AgentTool[] = [
   findTeammates,
   requestMentorship,
   searchListingsTool,
+  searchEvents,
+  registerForEvent,
 ];
