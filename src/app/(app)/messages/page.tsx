@@ -17,7 +17,7 @@ async function Conversations({ searchParams }: { searchParams: Promise<{ notice?
       {notice && <p role="alert">You can't message that person.</p>}
       {rows.length === 0 ? (
         <p>
-          No conversations yet. Find someone in{" "}
+          No messages yet. Find someone in{" "}
           <Link href="/people" className="underline">
             People
           </Link>{" "}

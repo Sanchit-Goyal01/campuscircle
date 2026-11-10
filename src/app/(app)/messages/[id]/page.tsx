@@ -23,15 +23,13 @@ async function Conversation({ params }: { params: Promise<{ id: string }> }) {
       </div>
     );
   }
-  // Opening the thread marks it read; the sidebar count catches up on the next refresh.
-  await me.db.rpc("mark_conversation_read", { p_conversation_id: conv.id });
-
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-      <h1 className="font-slab text-3xl font-bold">
+      <h1 className="font-slab break-words text-3xl font-bold">
         {conv.other_name}
         {conv.other_verified && <span className="ml-2 text-sm font-normal">Verified</span>}
       </h1>
+      {conv.truncated && <p className="text-sm">Showing the latest 200 messages.</p>}
       <Thread conversationId={conv.id} meId={me.userId} otherId={conv.other_id} otherName={conv.other_name} initial={conv.messages} />
       <p>
         <Link href="/messages" className="text-sm underline">

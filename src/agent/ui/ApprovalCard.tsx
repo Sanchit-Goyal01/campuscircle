@@ -116,7 +116,7 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
         </>
       ) : action.display?.kind === 'message' ? (
         <>
-          <p className="slip-title">Send a message to {action.display.recipient ?? 'A person we could not find'}</p>
+          <p className="slip-title">Send a message to {action.display.recipient ?? 'someone we could not find'}</p>
           <p className="whitespace-pre-wrap">{action.display.body}</p>
         </>
       ) : action.display?.kind === 'event' ? (

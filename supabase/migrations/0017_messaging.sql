@@ -120,9 +120,9 @@ begin
   insert into public.messages (conversation_id, college_id, sender_id, body)
   values (v_conv, public.current_college_id(), v_uid, v_body);
   update public.conversations
-  set last_message_at = now(),
-      low_read_at = case when user_low = v_uid then now() else low_read_at end,
-      high_read_at = case when user_high = v_uid then now() else high_read_at end
+  set last_message_at = clock_timestamp(),
+      low_read_at = case when user_low = v_uid then clock_timestamp() else low_read_at end,
+      high_read_at = case when user_high = v_uid then clock_timestamp() else high_read_at end
   where id = v_conv;
   return v_conv;
 end;
@@ -144,8 +144,8 @@ begin
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
   update public.conversations
-  set low_read_at = case when user_low = v_uid then now() else low_read_at end,
-      high_read_at = case when user_high = v_uid then now() else high_read_at end
+  set low_read_at = case when user_low = v_uid then clock_timestamp() else low_read_at end,
+      high_read_at = case when user_high = v_uid then clock_timestamp() else high_read_at end
   where id = p_conversation_id and v_uid in (user_low, user_high);
   get diagnostics v_rows = row_count;
   if v_rows = 0 then

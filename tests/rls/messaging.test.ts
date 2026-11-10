@@ -103,7 +103,7 @@ describe("messaging", { timeout: 90_000 }, () => {
     const up = await a.client.from("conversations").update({ low_read_at: null, last_message_at: null }).eq("id", conv);
     expect(up.error?.code).toBe("42501");
     const del = await a.client.from("messages").delete().eq("conversation_id", conv).select("id");
-    expect(del.error?.code === "42501" || (del.data ?? []).length === 0).toBe(true);
+    expect(del.error?.code).toBe("42501");
     // Not a participant: the read marker call is refused.
     expect((await c.client.rpc("mark_conversation_read", { p_conversation_id: conv })).error?.code).toBe("42501");
   });
@@ -126,7 +126,7 @@ describe("messaging", { timeout: 90_000 }, () => {
   test("realtime delivers a new message to its participants only", async () => {
     const e = await createStudent(`e-${run}@ma-${run}.edu`);
     const f = await createStudent(`f-${run}@ma-${run}.edu`);
-    const conv = (await e.client.rpc("open_conversation", { p_other: f.id })).data as string;
+    const g = await createStudent(`g-${run}@ma-${run}.edu`);
     const got: Record<string, string[]> = { f: [], c: [] };
     const listen = async (name: string, s: S) => {
       const { data } = await s.client.auth.getSession();
@@ -152,9 +152,22 @@ describe("messaging", { timeout: 90_000 }, () => {
     expect(got.f[0]).toMatch(/^live \d$/);
     await new Promise((r) => setTimeout(r, 1500));
     expect(got.c).toEqual([]);
-    void conv;
+    // Positive control: c is a participant elsewhere and hears that message on the same filterless subscription.
+    expect((await send(g, c.id, "for c only")).error).toBeNull();
+    await vi.waitFor(() => expect(got.c).toEqual(["for c only"]), { timeout: 10_000 });
+    expect(got.f.every((b) => b.startsWith("live "))).toBe(true);
     await f.client.removeAllChannels();
     await c.client.removeAllChannels();
+  });
+
+  test("find_person with % or _ does not match everyone", async () => {
+    const find = allTools.find((x) => x.name === "find_person")!;
+    const ctx = ctxFor(a, collegeA);
+    for (const name of ["%%", "__", "%_", `%${run}`]) {
+      expect(await find.run({ name }, ctx)).toEqual([]);
+    }
+    const hit = (await find.run({ name: `B-${run}` }, ctx)) as any[];
+    expect(hit.map((p) => p.person_id)).toEqual([b.id]);
   });
 
   test("send_message tool runs only after approval and the card shows the name, not the id", async () => {

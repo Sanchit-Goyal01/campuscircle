@@ -25,11 +25,14 @@ type Row = {
   high_read_at: string | null;
 };
 
-const isUnread = (c: Row, me: string, lastSender: string | null) => {
-  if (!c.last_message_at || lastSender === me) return false;
+/** True when the newest message is later than my read marker (before checking who sent it). */
+const pastMarker = (c: Row, me: string) => {
+  if (!c.last_message_at) return false;
   const mark = c.user_low === me ? c.low_read_at : c.high_read_at;
   return !mark || Date.parse(mark) < Date.parse(c.last_message_at);
 };
+
+const isUnread = (c: Row, me: string, lastSender: string | null) => lastSender !== me && pastMarker(c, me);
 
 async function lastMessage(db: SupabaseClient, conversationId: string) {
   const { data, error } = await db
@@ -56,25 +59,27 @@ async function myConversations(db: SupabaseClient, me: string) {
 
 /** Conversations whose newest message arrived after my read marker and was not sent by me. */
 export async function unreadConversationCount(db: SupabaseClient, userId?: string): Promise<number> {
-  let me = userId;
-  if (!me) {
-    const { data } = await db.auth.getUser();
-    me = data.user?.id;
+  // Runs in the layout: a failure here must never break the page.
+  try {
+    let me = userId;
+    if (!me) {
+      const { data } = await db.auth.getUser();
+      me = data.user?.id;
+    }
+    if (!me) return 0;
+    const marked = (await myConversations(db, me)).filter((c) => pastMarker(c, me));
+    const last = await Promise.all(marked.map((c) => lastMessage(db, c.id)));
+    return marked.filter((c, i) => isUnread(c, me, last[i]?.sender_id ?? null)).length;
+  } catch (e) {
+    console.error('Unread message count failed:', e instanceof Error ? e.message : e);
+    return 0;
   }
-  if (!me) return 0;
-  const rows = await myConversations(db, me);
-  const marked = rows.filter((c) => {
-    if (!c.last_message_at) return false;
-    const mark = c.user_low === me ? c.low_read_at : c.high_read_at;
-    return !mark || Date.parse(mark) < Date.parse(c.last_message_at);
-  });
-  const last = await Promise.all(marked.map((c) => lastMessage(db, c.id)));
-  return marked.filter((c, i) => isUnread(c, me, last[i]?.sender_id ?? null)).length;
 }
 
 /** My conversations, newest activity first, with the other person's name and the last message. */
 export async function listConversations(db: SupabaseClient, me: string): Promise<ConversationSummary[]> {
-  const rows = await myConversations(db, me);
+  // A conversation nobody has written in yet stays out of the list; its opener reaches it by redirect.
+  const rows = (await myConversations(db, me)).filter((c) => c.last_message_at !== null);
   if (rows.length === 0) return [];
   const otherId = (c: Row) => (c.user_low === me ? c.user_high : c.user_low);
   const { data: profs, error } = await db
@@ -126,5 +131,6 @@ export async function getConversation(db: SupabaseClient, me: string, id: string
     other_name: ((p?.full_name as string | undefined) || 'A student') as string,
     other_verified: p?.verified === true,
     messages: ((msgs ?? []) as Message[]).reverse(),
+    truncated: (msgs ?? []).length >= MAX_THREAD,
   };
 }

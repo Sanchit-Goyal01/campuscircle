@@ -86,10 +86,14 @@ test("agent: \"message <B name>: hello\" shows an approval card with B's name; a
   await expect(card.getByText("This action is done.")).toBeVisible({ timeout: 30_000 });
 
   await page.goto("/messages");
+  // One unread conversation shows in the sidebar until the thread is opened.
+  await expect(page.getByRole("link", { name: "Messages (1)" })).toBeVisible();
   const row = page.getByRole("listitem").filter({ hasText: a.name });
   await expect(row).toContainText("hello from the agent");
   await row.getByRole("link").first().click();
   await expect(page.getByText("hello from the agent")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Messages", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("link", { name: "Messages (1)" })).toHaveCount(0);
 
   // No match: the agent says so and queues nothing.
   await pa.goto("/");
