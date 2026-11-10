@@ -27,4 +27,13 @@ describe("monthGrid", () => {
     // 2028-02-01 is a Tuesday: Monday 2028-01-31 leads the first week.
     expect(feb[0][0].date).toBe("2028-01-31");
   });
+
+  test("monthGrid uses the Asia/Kolkata date at the start and end of the day", () => {
+    const days = monthGrid(2026, 11, [
+      { starts_at: "2026-11-10T19:00:00Z" }, // 00:30 IST on 11 Nov
+      { starts_at: "2026-11-10T18:00:00Z" }, // 23:30 IST on 10 Nov
+    ]).flat();
+    expect(days.find((d) => d.date === "2026-11-11")!.events).toHaveLength(1);
+    expect(days.find((d) => d.date === "2026-11-10")!.events).toHaveLength(1);
+  });
 });

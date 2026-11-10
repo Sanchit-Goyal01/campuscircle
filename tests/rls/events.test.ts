@@ -67,6 +67,16 @@ describe("events", { timeout: 60_000 }, () => {
     expect(seen.data).toHaveLength(1);
   });
 
+  test("staff can update and delete events; college_id cannot be changed", async () => {
+    const ev = await society.client.from("events").insert(newEvent({ title: "Editable" })).select("id").single();
+    const id = ev.data!.id;
+    const upd = await admin.client.from("events").update({ title: "Edited title", capacity: 20 }).eq("id", id).select("title, capacity");
+    expect(upd.data).toEqual([{ title: "Edited title", capacity: 20 }]);
+    expect((await admin.client.from("events").update({ college_id: collegeB }).eq("id", id)).error?.code).toBe("42501");
+    const del = await society.client.from("events").delete().eq("id", id).select("id");
+    expect(del.data).toHaveLength(1);
+  });
+
   test("register twice returns already_registered", async () => {
     const first = await student.client.rpc("register_for_event", { p_event_id: eventId });
     expect(first.error).toBeNull();
@@ -77,7 +87,7 @@ describe("events", { timeout: 60_000 }, () => {
     expect(count.data).toBe(1);
     // No client insert.
     const direct = await other.client.from("event_registrations").insert({ event_id: eventId, student_id: other.id });
-    expect(direct.error).not.toBeNull();
+    expect(direct.error?.code).toBe("42501");
     // Staff cannot register (students only).
     const staff = await admin.client.rpc("register_for_event", { p_event_id: eventId });
     expect(staff.error?.code).toBe("42501");
@@ -123,6 +133,9 @@ describe("events", { timeout: 60_000 }, () => {
     expect(mine.data!.every((r) => r.student_id === student.id)).toBe(true);
     const staff = await admin.client.from("event_registrations").select("student_id").eq("event_id", eventId);
     expect(staff.data!.map((r) => r.student_id).sort()).toEqual([student.id, other.id].sort());
+    const adminB = await createUserWithRole(`adb-${run}@eb-${run}.edu`, "college_admin");
+    const seenByB = await adminB.client.from("event_registrations").select("student_id");
+    expect(seenByB.data).toEqual([]);
     const b = await studentB.client.from("event_registrations").select("student_id");
     expect(b.data).toEqual([]);
     // Cannot delete someone else's registration.
@@ -136,7 +149,7 @@ describe("events", { timeout: 60_000 }, () => {
     const r = await studentB.client.rpc("register_for_event", { p_event_id: eventId });
     expect(r.error?.code).toBe("42501");
     const c = await studentB.client.rpc("event_registration_count", { p_event_id: eventId });
-    expect(c.error).not.toBeNull();
+    expect(c.error?.code).toBe("42501");
     const out = (await tool("search_events").run({ query: "" }, ctxFor(studentB, collegeB))) as unknown[];
     expect(out).toEqual([]);
     const outA = (await tool("search_events").run({ query: "Workshop" }, ctxFor(student, collegeA))) as any[];
@@ -145,6 +158,8 @@ describe("events", { timeout: 60_000 }, () => {
   });
 
   test("search_events handles odd queries and date ranges", async () => {
+    await expect(tool("search_events").run({ query: "", from: "2026-02-31" }, ctxFor(student, collegeA))).rejects.toThrow("not a valid date");
+    await expect(tool("search_events").run({ query: "", to: "2026-02-31" }, ctxFor(student, collegeA))).rejects.toThrow("not a valid date");
     for (const q of ['"', "a & b", "x:y", "", "' or 1=1 --"]) {
       await expect(tool("search_events").run({ query: q }, ctxFor(student, collegeA))).resolves.toBeInstanceOf(Array);
     }

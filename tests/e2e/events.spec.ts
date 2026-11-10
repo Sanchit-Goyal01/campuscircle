@@ -16,9 +16,19 @@ async function signUp(page: Page, label: string) {
   return name;
 }
 
+// datetime-local value for an instant, as campus time (Asia/Kolkata), whatever the runner's zone.
+const istParts = (d: Date) => {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(d).map((x) => [x.type, x.value]),
+  );
+  return p;
+};
 const localInput = (d: Date) => {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  const p = istParts(d);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 };
 
 test("admin creates an event, student sees it in the calendar and registers, seat count goes up", async ({ page, browser, baseURL }) => {
@@ -45,8 +55,12 @@ test("admin creates an event, student sees it in the calendar and registers, sea
   await signUp(sp, "Student");
   await sp.goto("/events/new");
   await expect(sp.getByText("This page could not be found")).toBeVisible();
-  const month = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
-  await sp.getByRole("link", { name: "Events" }).click();
+  const month = `${istParts(start).year}-${istParts(start).month}`;
+  await sp.goto(`/events?view=calendar&month=${month}`);
+  await expect(sp.getByRole("heading", { name: "Events" })).toBeVisible();
+  // Hand-typed bad month values fall back to the current month instead of failing.
+  await sp.goto("/events?view=calendar&month=0001-01");
+  await expect(sp.getByRole("heading", { name: "Events" })).toBeVisible();
   await sp.goto(`/events?view=calendar&month=${month}`);
   await sp.getByRole("link", { name: title }).click();
   await expect(sp.getByRole("heading", { name: title })).toBeVisible();

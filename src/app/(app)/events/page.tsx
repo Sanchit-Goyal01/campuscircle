@@ -68,7 +68,7 @@ async function Events({ searchParams }: { searchParams: Promise<SP> }) {
   }
 
   const raw = one(sp.month);
-  const month = raw && MONTH_RE.test(raw) ? raw : todayLocal().slice(0, 7);
+  const month = raw && MONTH_RE.test(raw) && +raw.slice(0, 4) >= 2000 && +raw.slice(0, 4) <= 2100 ? raw : todayLocal().slice(0, 7);
   const [year, mon] = month.split("-").map(Number);
   const fromIso = dayStart(`${month}-01`)!;
   const toIso = dayStart(`${shift(month, 1)}-01`)!;

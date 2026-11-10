@@ -20,6 +20,7 @@ export const searchEvents: AgentTool<z.infer<typeof searchInput>> = {
     const fromDay = from ?? todayLocal();
     const fromIso = dayStart(fromDay);
     if (!fromIso) throw new Error('The from date is not a valid date.');
+    if (to && !dayStart(to)) throw new Error('The to date is not a valid date.');
     const toDay = to ?? addDays(fromDay, 30);
     const toIso = dayStart(addDays(toDay, to ? 1 : 0));
     if (!toIso) throw new Error('The to date is not a valid date.');
