@@ -26,7 +26,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex flex-1 flex-col md:flex-row">
       <aside className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-300 px-4 py-3 md:w-56 md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:border-b-0 md:border-r">
         <p className="font-semibold">CampusCircle</p>
-        <nav aria-label="Main" className="flex gap-4 md:flex-col md:gap-2">
+        <nav aria-label="Main" className="flex flex-wrap gap-x-4 gap-y-1 md:flex-col md:gap-2">
           <Link href="/" className="text-sm underline">
             Home
           </Link>
@@ -35,6 +35,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/academics/timetable" className="text-sm underline">
             Timetable
+          </Link>
+          <Link href="/academics/plans" className="text-sm underline">
+            Study plans
           </Link>
         </nav>
         <div className="md:mt-auto">

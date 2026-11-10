@@ -46,6 +46,9 @@ async function Academics() {
         <Link href="/academics/papers" className="underline">
           Past papers
         </Link>
+        <Link href="/academics/plans" className="underline">
+          Study plans
+        </Link>
       </nav>
 
       <section aria-labelledby="add-marks" className="flex flex-col gap-3">
