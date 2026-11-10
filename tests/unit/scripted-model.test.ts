@@ -87,4 +87,41 @@ describe("scripted model", () => {
     expect(turn.toolCalls).toEqual([]);
     expect(turn.text).not.toBe("");
   });
+
+  describe("issue intake forced tools", () => {
+    const forced = (name: string, content: string) =>
+      createScriptedModel().next({ system: "", tools: [], messages: [user(content)], toolChoice: { name } });
+    test("submit_classification: water", async () => {
+      const t = await forced("submit_classification", "The Water cooler is broken");
+      expect(t.toolCalls[0]).toMatchObject({
+        name: "submit_classification",
+        input: { title: "Water cooler not working", category: "water", severity: "high", department: "Hostel" },
+      });
+    });
+    test("submit_classification: other uses the report text", async () => {
+      const t = await forced("submit_classification", "<report>Broken Chair in room 4</report>");
+      expect(t.toolCalls[0].input).toEqual({
+        title: "Broken Chair in room 4",
+        category: "other",
+        severity: "medium",
+        department: "Maintenance",
+      });
+    });
+    test("fail still throws", async () => {
+      await expect(forced("submit_classification", "this will fail")).rejects.toThrow();
+    });
+    test("submit_match returns the first UUID after Candidates:", async () => {
+      const id = "aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb";
+      const t = await forced("submit_match", `report\n\nCandidates:\n${id} Leak\n`);
+      expect(t.toolCalls[0].input).toEqual({ issue_id: id });
+      expect((await forced("submit_match", "report")).toolCalls[0].input).toEqual({ issue_id: null });
+    });
+    test("submit_insight", async () => {
+      const t = await forced("submit_insight", "x");
+      expect(t.toolCalls[0].input).toEqual({
+        hypothesis: "Scripted hypothesis: shared plumbing on this floor.",
+        confidence: "medium",
+      });
+    });
+  });
 });

@@ -8,6 +8,8 @@ type ClaudeBlockParam = Anthropic.Beta.Messages.BetaContentBlockParam;
 type ClaudeTool = Anthropic.Beta.Messages.BetaTool;
 
 const DEFAULT_MODEL = 'claude-opus-5-5';
+const DEFAULT_CLASSIFIER_MODEL = 'claude-haiku-5-5';
+export type ModelPurpose = 'agent' | 'classifier';
 const MAX_TOKENS = 16000;
 // Lets the API retry a policy decline on Anthropic's default fallback model.
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
@@ -127,7 +129,7 @@ export function createClaudeModel(deps: { client: MessagesClient; model: string 
   };
 }
 
-function realModel(): ModelClient {
+function realModel(purpose: ModelPurpose): ModelClient {
   let claude: ModelClient | undefined;
   return {
     next(args) {
@@ -136,7 +138,10 @@ function realModel(): ModelClient {
       if (!apiKey) return Promise.reject(new Error('ANTHROPIC_API_KEY is not set'));
       claude ??= createClaudeModel({
         client: new Anthropic({ apiKey }),
-        model: process.env.AGENT_MODEL || DEFAULT_MODEL,
+        model:
+          purpose === 'classifier'
+            ? process.env.CLASSIFIER_MODEL || DEFAULT_CLASSIFIER_MODEL
+            : process.env.AGENT_MODEL || DEFAULT_MODEL,
       });
       return claude.next(args);
     },
@@ -153,8 +158,8 @@ function scriptedModel(): ModelClient {
   };
 }
 
-export function getModelClient(): ModelClient {
-  if (process.env.AGENT_TEST_MODEL !== '1') return realModel();
+export function getModelClient(purpose: ModelPurpose = 'agent'): ModelClient {
+  if (process.env.AGENT_TEST_MODEL !== '1') return realModel(purpose);
   if (process.env.NODE_ENV === 'production') {
     throw new Error('AGENT_TEST_MODEL=1 is set in production: refusing the scripted model');
   }

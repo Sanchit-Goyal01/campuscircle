@@ -42,9 +42,42 @@ const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string 
  */
 export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {
-    async next({ messages, tools }) {
+    async next({ messages, tools, toolChoice }) {
       const message = firstUserMessage(messages);
       if (message.includes('fail')) throw new Error('Scripted model failure');
+
+      // Issue intake forces one tool; the original-case text is needed for titles and ids.
+      if (toolChoice?.name === 'submit_classification') {
+        if (message.includes('water')) {
+          return call('submit_classification', {
+            title: 'Water cooler not working',
+            category: 'water',
+            severity: 'high',
+            department: 'Hostel',
+          });
+        }
+        const raw = messages.find((m) => m.role === 'user');
+        const content = raw?.role === 'user' ? raw.content : '';
+        const report = content.match(/<report>([\s\S]*?)<\/report>/i)?.[1] ?? content;
+        return call('submit_classification', {
+          title: report.trim().slice(0, 60),
+          category: 'other',
+          severity: 'medium',
+          department: 'Maintenance',
+        });
+      }
+      if (toolChoice?.name === 'submit_match') {
+        const at = message.lastIndexOf('\ncandidates:');
+        const after = at < 0 ? '' : message.slice(at);
+        const id = after.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
+        return call('submit_match', { issue_id: id ?? null });
+      }
+      if (toolChoice?.name === 'submit_insight') {
+        return call('submit_insight', {
+          hypothesis: 'Scripted hypothesis: shared plumbing on this floor.',
+          confidence: 'medium',
+        });
+      }
 
       // Study help offers exactly one submit_* tool and expects it to be called.
       if (tools.length === 1 && tools[0].name.startsWith('submit_') && tools[0].name in SUBMIT_INPUTS) {
