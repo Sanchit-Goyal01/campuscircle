@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { CATEGORIES, SEVERITIES } from "@/modules/issues/schema";
-import { runDeadlineCheck, transitionIssue, triageIssue, updateSla, type ActionState } from "./actions";
+import { decideInsight, findPatterns, runDeadlineCheck, transitionIssue, triageIssue, updateSla, type ActionState } from "./actions";
 
 const input = "w-full border border-zinc-800 px-2 py-1 text-sm";
 const button = "border border-zinc-800 px-3 py-1 text-sm";
@@ -167,6 +167,58 @@ export function RunCheck() {
           {state.message}
         </p>
       )}
+      {state.error && (
+        <p role="alert" className="text-sm">
+          {state.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function FindPatterns() {
+  const [state, setState] = useState<ActionState>({});
+  const [pending, start] = useTransition();
+  return (
+    <div className="flex flex-col gap-2">
+      <div>
+        <button
+          type="button"
+          disabled={pending}
+          className={button}
+          onClick={() => start(async () => setState(await findPatterns()))}
+        >
+          {pending ? "Finding patterns..." : "Find patterns"}
+        </button>
+      </div>
+      {state.message && (
+        <p role="status" className="text-sm">
+          {state.message}
+        </p>
+      )}
+      {state.error && (
+        <p role="alert" className="text-sm">
+          {state.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function InsightButtons({ insightId }: { insightId: string }) {
+  const [state, setState] = useState<ActionState>({});
+  const [pending, start] = useTransition();
+  const decide = (status: "accepted" | "dismissed") => start(async () => setState(await decideInsight(insightId, status)));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-3">
+        <button type="button" disabled={pending} className={button} onClick={() => decide("accepted")}>
+          Accept
+        </button>
+        <button type="button" disabled={pending} className={button} onClick={() => decide("dismissed")}>
+          Dismiss
+        </button>
+      </div>
       {state.error && (
         <p role="alert" className="text-sm">
           {state.error}

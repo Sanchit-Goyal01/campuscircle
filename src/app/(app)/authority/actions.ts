@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { getModelClient } from "@/agent/model";
+import { runRootCause } from "@/modules/issues/root-cause";
 import { CATEGORIES, SEVERITIES } from "@/modules/issues/schema";
 
 export type ActionState = { error?: string; ok?: boolean; message?: string };
@@ -84,4 +86,33 @@ export async function runDeadlineCheck(): Promise<ActionState> {
   const r = (data ?? {}) as { escalated?: number; tallied?: number };
   revalidatePath("/authority");
   return { ok: true, message: `Escalated ${r.escalated ?? 0}, tallied ${r.tallied ?? 0}.` };
+}
+
+export async function findPatterns(): Promise<ActionState> {
+  const me = await getProfile();
+  if (!me) return { error: GENERIC };
+  if (me.profile.role !== "authority" && me.profile.role !== "college_admin") return { error: DENIED };
+  try {
+    const { created } = await runRootCause(me.db, getModelClient("classifier"));
+    revalidatePath("/authority");
+    return { ok: true, message: created === 0 ? "No new patterns found." : `Found ${created} new ${created === 1 ? "pattern" : "patterns"}.` };
+  } catch (e) {
+    return { error: mapError({ code: (e as { code?: string }).code, message: e instanceof Error ? e.message : "unknown" }) };
+  }
+}
+
+export async function decideInsight(insightId: string, status: string): Promise<ActionState> {
+  if (!UUID.test(insightId) || (status !== "accepted" && status !== "dismissed")) return { error: GENERIC };
+  const me = await getProfile();
+  if (!me) return { error: GENERIC };
+  const { data, error } = await me.db
+    .from("root_cause_insights")
+    .update({ status, decided_by: me.userId })
+    .eq("id", insightId)
+    .eq("status", "proposed")
+    .select("id");
+  if (error) return { error: mapError(error) };
+  if (!data || data.length === 0) return { error: "This insight was already decided." };
+  revalidatePath("/authority");
+  return { ok: true };
 }

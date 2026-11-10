@@ -5,7 +5,7 @@ import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
 import { relativeDeadline, statusLabel } from "../issues/labels";
 import { SEVERITIES } from "@/modules/issues/schema";
-import { RunCheck, SlaForm, TriageForm } from "./forms";
+import { FindPatterns, InsightButtons, RunCheck, SlaForm, TriageForm } from "./forms";
 
 const ACTIVE = ["open", "assigned", "in_progress", "resolved_pending"];
 const STATUSES = [...ACTIVE, "closed", "closed_unverified"];
@@ -20,6 +20,15 @@ type Row = {
   due_at: string | null;
   escalation_level: number;
   needs_triage: boolean;
+  locations: { name: string } | null;
+};
+type Insight = {
+  id: string;
+  category: string;
+  hypothesis: string;
+  confidence: string;
+  evidence_issue_ids: string[];
+  status: string;
   locations: { name: string } | null;
 };
 type Metrics = {
@@ -71,7 +80,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
   if (severityF) queueQuery = queueQuery.eq("severity", severityF);
   if (locationF) queueQuery = queueQuery.eq("location_id", locationF);
 
-  const [queueRes, locRes, openRes, metricsRes, deptRes, slaRes, triageRes] = await Promise.all([
+  const [queueRes, locRes, openRes, metricsRes, deptRes, slaRes, triageRes, insightRes] = await Promise.all([
     queueQuery,
     me.db.from("locations").select("id, name").order("name"),
     me.db.from("issues").select("location_id").in("status", ACTIVE).limit(5000),
@@ -87,8 +96,14 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
           .order("created_at")
           .limit(50)
       : Promise.resolve({ data: [], error: null }),
+    me.db
+      .from("root_cause_insights")
+      .select("id, category, hypothesis, confidence, evidence_issue_ids, status, locations(name)")
+      .in("status", ["proposed", "accepted"])
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
-  for (const r of [queueRes, locRes, openRes, metricsRes, deptRes, slaRes, triageRes]) {
+  for (const r of [queueRes, locRes, openRes, metricsRes, deptRes, slaRes, triageRes, insightRes]) {
     if (r.error) {
       console.error("Could not load dashboard:", r.error.message);
       throw new Error("Could not load the dashboard.");
@@ -109,6 +124,17 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
     ((slaRes.data ?? []) as { severity: string; deadline_minutes: number }[]).map((r) => [r.severity, r.deadline_minutes]),
   ) as { critical: number; high: number; medium: number; low: number };
   const triage = (triageRes.data ?? []) as unknown as { id: string; title: string; locations: { name: string } | null }[];
+
+  const insights = (insightRes.data ?? []) as unknown as Insight[];
+  const evidenceIds = [...new Set(insights.flatMap((i) => i.evidence_issue_ids))];
+  const evidenceRes = evidenceIds.length
+    ? await me.db.from("issues").select("id, title").in("id", evidenceIds)
+    : { data: [], error: null };
+  if (evidenceRes.error) {
+    console.error("Could not load insight evidence:", evidenceRes.error.message);
+    throw new Error("Could not load the dashboard.");
+  }
+  const titles = new Map(((evidenceRes.data ?? []) as { id: string; title: string }[]).map((t) => [t.id, t.title]));
 
   const field = "border border-zinc-800 px-2 py-1 text-sm";
 
@@ -194,6 +220,44 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
           <RunCheck />
         </section>
       )}
+
+      <section aria-labelledby="patterns" className="flex flex-col gap-3">
+        <h2 id="patterns" className="text-xl font-semibold">
+          Patterns
+        </h2>
+        <FindPatterns />
+        {insights.length > 0 && (
+          <ul className="flex flex-col gap-3">
+            {insights.map((i) => (
+              <li key={i.id} className="flex flex-col gap-2 border border-zinc-300 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="border border-zinc-800 px-2 py-0.5 text-xs font-semibold uppercase">Hypothesis</span>
+                  <span className="font-medium">{i.locations?.name ?? "Unknown location"}</span>
+                  <span>{i.category}</span>
+                  <span>Confidence: {i.confidence}</span>
+                </div>
+                <p className="text-sm">{i.hypothesis}</p>
+                <p className="text-sm">
+                  Evidence:{" "}
+                  {i.evidence_issue_ids.map((id, n) => (
+                    <span key={id}>
+                      {n > 0 && ", "}
+                      <Link href={`/authority/${id}`} className="underline">
+                        {titles.get(id) ?? "Issue"}
+                      </Link>
+                    </span>
+                  ))}
+                </p>
+                {i.status === "accepted" ? (
+                  <p className="text-sm font-semibold">Accepted</p>
+                ) : (
+                  <InsightButtons insightId={i.id} />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section aria-labelledby="queue" className="flex flex-col gap-3">
         <h2 id="queue" className="text-xl font-semibold">

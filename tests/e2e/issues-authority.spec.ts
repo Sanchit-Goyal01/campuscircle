@@ -72,6 +72,7 @@ test.beforeEach(async () => {
   const admin = adminClient();
   const { error } = await admin.from("issues").delete().eq("college_id", COLLEGE);
   if (error) throw error;
+  await admin.from("root_cause_insights").delete().eq("college_id", COLLEGE);
   // Other tests change SLA minutes; restore defaults.
   for (const [severity, m] of [["critical", 1440], ["high", 2880], ["medium", 4320], ["low", 10080]] as const) {
     await admin.from("sla_rules").update({ deadline_minutes: m }).eq("college_id", COLLEGE).eq("severity", severity);
@@ -182,4 +183,25 @@ test("authority does not see the admin-only sections", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Needs triage" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Deadlines" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run deadline check now" })).toHaveCount(0);
+});
+
+test("Find patterns shows a Hypothesis card that can be accepted", async ({ page }) => {
+  const ids = [
+    await seedIssue({ title: "Tap leaking one", department: "Hostel" }),
+    await seedIssue({ title: "Tap leaking two", department: "Hostel" }),
+    await seedIssue({ title: "Tap leaking three", department: "Hostel" }),
+  ];
+  await signIn(page, await newUser("authority", "Hostel"));
+  await page.goto("/authority");
+  await page.getByRole("button", { name: "Find patterns" }).click();
+  const card = page.getByRole("listitem").filter({ hasText: "Hypothesis" });
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Hostel Block A")).toBeVisible();
+  await expect(card.getByRole("link", { name: "Tap leaking one" })).toHaveAttribute("href", `/authority/${ids[0]}`);
+  await card.getByRole("button", { name: "Accept" }).click();
+  await expect(card.getByText("Accepted")).toBeVisible();
+  const { data } = await adminClient().from("root_cause_insights").select("status, decided_by").eq("college_id", COLLEGE);
+  expect(data).toHaveLength(1);
+  expect(data![0].status).toBe("accepted");
+  expect(data![0].decided_by).not.toBeNull();
 });
