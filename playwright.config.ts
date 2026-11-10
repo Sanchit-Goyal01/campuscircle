@@ -33,7 +33,7 @@ export default defineConfig({
     {
       // Shares the agent dev server (scripted model on). Academics specs that need the agent run here.
       name: "academics",
-      testMatch: /(academics|issues)-.*\.spec\.ts/,
+      testMatch: /((academics|issues)-.*|people)\.spec\.ts/,
       timeout: 60_000,
       use: { ...devices["Desktop Chrome"], baseURL: `http://localhost:${agentPort}` },
     },
