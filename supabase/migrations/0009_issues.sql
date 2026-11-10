@@ -116,7 +116,9 @@ create table public.issue_events (
   actor_role public.app_role,
   actor_id uuid,
   note text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Student identity must never be written to the event log.
+  constraint issue_events_no_student_actor check (actor_role is distinct from 'student' or actor_id is null)
 );
 create index issue_events_issue_id_idx on public.issue_events (issue_id);
 create index issue_events_college_id_idx on public.issue_events (college_id);

@@ -5,7 +5,7 @@ import { createUserWithRole } from "../helpers/roles";
 const run = Math.random().toString(36).slice(2, 8);
 const dom = `iss-${run}.edu`;
 const otherDom = `iso-${run}.edu`;
-const pdf = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
 
 type U = Awaited<ReturnType<typeof createStudent>>;
 let collegeA: string;
@@ -19,6 +19,8 @@ let mate: U;
 let outsider: U;
 let authority: U;
 let admin: U;
+let authorityB: U;
+let adminB: U;
 let notifId: string;
 
 beforeAll(async () => {
@@ -35,6 +37,9 @@ beforeAll(async () => {
   authority = await createUserWithRole(`auth-${run}@${dom}`, "authority", { departmentName: "Maintenance" });
   admin = await createUserWithRole(`adm-${run}@${dom}`, "college_admin");
 
+  authorityB = await createUserWithRole(`autb-${run}@${otherDom}`, "authority");
+  adminB = await createUserWithRole(`admb-${run}@${otherDom}`, "college_admin");
+
   const l = await db.from("locations").insert({ college_id: collegeA, name: "Library" }).select("id").single();
   expect(l.error).toBeNull();
   locA = l.data!.id;
@@ -46,11 +51,13 @@ beforeAll(async () => {
     .single();
   expect(i.error).toBeNull();
   issueA = i.data!.id;
+  expect(lb.error).toBeNull();
   const ib = await db
     .from("issues")
     .insert({ college_id: collegeB, location_id: lb.data!.id, title: "Other" })
     .select("id")
     .single();
+  expect(ib.error).toBeNull();
   issueB = ib.data!.id;
 
   const r = await db
@@ -59,9 +66,12 @@ beforeAll(async () => {
     .select("id")
     .single();
   expect(r.error).toBeNull();
-  await db.from("issue_reporters").insert({ issue_id: issueA, student_id: reporter.id, college_id: collegeA, first_report_id: r.data!.id });
-  await db.from("issue_events").insert({ issue_id: issueA, college_id: collegeA, kind: "reported" });
-  await db.from("issue_confirmations").insert({ issue_id: issueA, student_id: reporter.id, college_id: collegeA, round: 1, fixed: true });
+  const rr = await db.from("issue_reporters").insert({ issue_id: issueA, student_id: reporter.id, college_id: collegeA, first_report_id: r.data!.id });
+  expect(rr.error).toBeNull();
+  const ev = await db.from("issue_events").insert({ issue_id: issueA, college_id: collegeA, kind: "reported" });
+  expect(ev.error).toBeNull();
+  const cf = await db.from("issue_confirmations").insert({ issue_id: issueA, student_id: reporter.id, college_id: collegeA, round: 1, fixed: true });
+  expect(cf.error).toBeNull();
   const n = await db
     .from("notifications")
     .insert([
@@ -103,10 +113,12 @@ describe("issue schema", () => {
 
   test("college admin cannot read issue_reporters", async () => {
     expect(await count(admin, "issue_reporters")).toBe(0);
+    expect(await count(admin, "issue_confirmations")).toBe(0);
   });
 
   test("reporter reads own reporter row and own issue's reports", async () => {
     expect(await count(reporter, "issue_reporters")).toBe(1);
+    expect(await count(reporter, "issue_confirmations")).toBe(1);
     expect(await count(reporter, "issue_reports")).toBe(1);
   });
 
@@ -158,19 +170,46 @@ describe("issue schema", () => {
   });
 
   test("student uploads to own college folder; upload to another college folder is refused", async () => {
-    const ok = await reporter.client.storage.from("issue-photos").upload(`${collegeA}/${issueA}/a.png`, pdf, { contentType: "image/png" });
+    const ok = await reporter.client.storage.from("issue-photos").upload(`${collegeA}/${issueA}/a.png`, png, { contentType: "image/png" });
     expect(ok.error).toBeNull();
-    const bad = await reporter.client.storage.from("issue-photos").upload(`${collegeB}/${issueB}/a.png`, pdf, { contentType: "image/png" });
+    const bad = await reporter.client.storage.from("issue-photos").upload(`${collegeB}/${issueB}/a.png`, png, { contentType: "image/png" });
     expect(bad.error).not.toBeNull();
   });
 
   test("authority can download a photo; another student cannot", async () => {
     const path = `${collegeA}/${issueA}/b.png`;
-    const up = await reporter.client.storage.from("issue-photos").upload(path, pdf, { contentType: "image/png" });
+    const up = await reporter.client.storage.from("issue-photos").upload(path, png, { contentType: "image/png" });
     expect(up.error).toBeNull();
     const a = await authority.client.storage.from("issue-photos").download(path);
     expect(a.error).toBeNull();
     const m = await mate.client.storage.from("issue-photos").download(path);
     expect(m.error).not.toBeNull();
+  });
+
+  test("privileged roles of another college see and change nothing", async () => {
+    expect(await count(authorityB, "issue_reports")).toBe(0);
+    expect(await count(adminB, "issue_reports")).toBe(0);
+    const sla = await adminB.client.from("sla_rules").update({ deadline_minutes: 1 }).eq("college_id", collegeA).select();
+    expect(sla.data ?? []).toHaveLength(0);
+    const loc = await adminB.client.from("locations").update({ name: "Hacked" }).eq("college_id", collegeA).select();
+    expect(loc.data ?? []).toHaveLength(0);
+    const db = adminClient();
+    const { data: rules } = await db.from("sla_rules").select("deadline_minutes").eq("college_id", collegeA);
+    expect(rules!.every((x) => x.deadline_minutes !== 1)).toBe(true);
+    const { data: locs } = await db.from("locations").select("name").eq("college_id", collegeA);
+    expect(locs!.some((x) => x.name === "Hacked")).toBe(false);
+    const path = `${collegeA}/${issueA}/c.png`;
+    const up = await reporter.client.storage.from("issue-photos").upload(path, png, { contentType: "image/png" });
+    expect(up.error).toBeNull();
+    const dl = await authorityB.client.storage.from("issue-photos").download(path);
+    expect(dl.error).not.toBeNull();
+  });
+
+  test("events cannot record a student actor", async () => {
+    const { error } = await adminClient().from("issue_events").insert({
+      issue_id: issueA, college_id: collegeA, kind: "reported", actor_role: "student", actor_id: reporter.id,
+    });
+    expect(error).not.toBeNull();
+    expect(error!.code).toBe("23514");
   });
 });
