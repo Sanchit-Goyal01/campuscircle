@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
+import { CATEGORIES, SEVERITIES } from "@/modules/issues/schema";
 import { runDeadlineCheck, transitionIssue, triageIssue, updateSla, type ActionState } from "./actions";
 
 const input = "w-full border border-zinc-800 px-2 py-1 text-sm";
@@ -77,7 +78,7 @@ export function TriageForm({
           <option value="" disabled>
             Choose
           </option>
-          {["water", "electricity", "internet", "sanitation", "furniture", "safety", "other"].map((c) => (
+          {CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
@@ -90,7 +91,7 @@ export function TriageForm({
           <option value="" disabled>
             Choose
           </option>
-          {["critical", "high", "medium", "low"].map((s) => (
+          {SEVERITIES.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>

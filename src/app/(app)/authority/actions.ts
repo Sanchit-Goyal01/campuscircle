@@ -3,14 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { CATEGORIES, SEVERITIES } from "@/modules/issues/schema";
 
 export type ActionState = { error?: string; ok?: boolean; message?: string };
 
 const GENERIC = "Something went wrong. Try again.";
 const DENIED = "You can't change this issue.";
 const TRANSITIONS = ["assigned", "in_progress", "resolved_pending"];
-const SEVERITIES = ["critical", "high", "medium", "low"] as const;
-const CATEGORIES = ["water", "electricity", "internet", "sanitation", "furniture", "safety", "other"];
 
 type Rpc = { code?: string; message: string };
 function mapError(error: Rpc): string {
@@ -42,7 +41,7 @@ export async function triageIssue(_prev: ActionState, formData: FormData): Promi
   const severity = String(formData.get("severity") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   if (!UUID.test(issueId) || !UUID.test(department)) return { error: "Choose a department." };
-  if (!CATEGORIES.includes(category)) return { error: "Choose a category." };
+  if (!(CATEGORIES as readonly string[]).includes(category)) return { error: "Choose a category." };
   if (!(SEVERITIES as readonly string[]).includes(severity)) return { error: "Choose a severity." };
   if (title.length < 1 || title.length > 200) return { error: "Enter a title of 1 to 200 characters." };
   const me = await getProfile();
@@ -71,18 +70,8 @@ export async function updateSla(_prev: ActionState, formData: FormData): Promise
   }
   const me = await getProfile();
   if (!me) return { error: GENERIC };
-  if (me.profile.role !== "college_admin") return { error: DENIED };
-  for (const [severity, minutes] of values) {
-    // RLS limits this to the admin's own college; a refused update changes no rows.
-    const { data, error } = await me.db
-      .from("sla_rules")
-      .update({ deadline_minutes: minutes })
-      .eq("college_id", me.profile.college_id)
-      .eq("severity", severity)
-      .select("severity");
-    if (error) return { error: mapError(error) };
-    if (!data || data.length === 0) return { error: DENIED };
-  }
+  const { error } = await me.db.rpc("update_sla_rules", { p_minutes: Object.fromEntries(values) });
+  if (error) return { error: error.code === "23514" ? "Enter whole minutes of 1 or more for every severity." : mapError(error) };
   revalidatePath("/authority");
   return { ok: true, message: "Deadlines saved." };
 }

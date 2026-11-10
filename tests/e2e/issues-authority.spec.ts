@@ -174,3 +174,12 @@ test("student gets 404 on /authority", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Authority dashboard" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Dashboard" })).toHaveCount(0);
 });
+
+test("authority does not see the admin-only sections", async ({ page }) => {
+  await signIn(page, await newUser("authority", "Hostel"));
+  await page.goto("/authority");
+  await expect(page.getByRole("heading", { name: "Queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needs triage" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Deadlines" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run deadline check now" })).toHaveCount(0);
+});

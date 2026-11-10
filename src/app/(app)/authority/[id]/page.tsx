@@ -89,7 +89,8 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       (
         await Promise.all(
           r.photo_paths.map(async (p) => {
-            const { data } = await me.db.storage.from("issue-photos").createSignedUrl(p, 300);
+            const { data, error } = await me.db.storage.from("issue-photos").createSignedUrl(p, 300);
+            if (error) console.error("Could not sign photo URL:", error.message);
             return data?.signedUrl ?? null;
           }),
         )

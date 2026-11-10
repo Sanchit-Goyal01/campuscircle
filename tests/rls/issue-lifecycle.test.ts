@@ -483,3 +483,36 @@ describe("anonymity", () => {
     expect(JSON.stringify(staff.data)).not.toMatch(/@/);
   });
 });
+
+describe("update_sla_rules and staff-only actions", () => {
+  const slaOf = async () => {
+    const { data } = await adminClient().from("sla_rules").select("severity, deadline_minutes").eq("college_id", collegeA);
+    return Object.fromEntries((data ?? []).map((r) => [r.severity, r.deadline_minutes]));
+  };
+  test("admin updates all four at once, authority and student are refused", async () => {
+    const before = await slaOf();
+    const next = { critical: 11, high: 22, medium: 33, low: 44 };
+    expect((await admin.client.rpc("update_sla_rules", { p_minutes: next })).error).toBeNull();
+    expect(await slaOf()).toEqual(next);
+    expect((await authHostel.client.rpc("update_sla_rules", { p_minutes: before })).error?.code).toBe("42501");
+    expect((await s1.client.rpc("update_sla_rules", { p_minutes: before })).error?.code).toBe("42501");
+    expect(await slaOf()).toEqual(next);
+    await admin.client.rpc("update_sla_rules", { p_minutes: before });
+  });
+  test("an invalid value leaves every row unchanged", async () => {
+    const before = await slaOf();
+    for (const bad of [{ critical: 5, high: 0, medium: 5, low: 5 }, { critical: 5, high: 5, medium: 5 }, { critical: 5, high: 1.5, medium: 5, low: 5 }, { critical: 5, high: 5, medium: 5, low: 3000000 }]) {
+      expect((await admin.client.rpc("update_sla_rules", { p_minutes: bad })).error?.code).toBe("23514");
+    }
+    expect(await slaOf()).toEqual(before);
+  });
+  test("an authority cannot triage or run the college deadline job", async () => {
+    const r = await authHostel.client.rpc("run_issue_jobs_for_my_college");
+    expect(r.error?.code).toBe("42501");
+    const { issueId } = await makeIssue(1);
+    const t = await authHostel.client.rpc("triage_issue", {
+      p_issue: issueId, p_department: hostelDept, p_category: "water", p_severity: "high", p_title: "x",
+    });
+    expect(t.error?.code).toBe("42501");
+  });
+});

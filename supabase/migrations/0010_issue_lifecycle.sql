@@ -560,6 +560,46 @@ $$;
 revoke all on function public.issue_metrics() from public, anon;
 grant execute on function public.issue_metrics() to authenticated;
 
+-- All four deadlines in one statement, so a bad value or a refusal changes nothing.
+-- Security invoker: the sla_rules column grant and admin policy still apply.
+create function public.update_sla_rules(p_minutes jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_sev text;
+  v_val text;
+  v_updated int;
+begin
+  if public.current_college_id() is null
+     or coalesce(public.app_role_of_user() = 'college_admin', false) is not true then
+    raise exception 'insufficient_privilege' using errcode = '42501';
+  end if;
+  if p_minutes is null or jsonb_typeof(p_minutes) <> 'object' then
+    raise exception 'invalid_sla' using errcode = '23514';
+  end if;
+  foreach v_sev in array array['critical', 'high', 'medium', 'low'] loop
+    v_val := p_minutes ->> v_sev;
+    if coalesce(jsonb_typeof(p_minutes -> v_sev), '') <> 'number' or v_val !~ '^[0-9]+$'
+       or v_val::bigint not between 1 and 2000000 then
+      raise exception 'invalid_sla' using errcode = '23514';
+    end if;
+  end loop;
+
+  update public.sla_rules s
+  set deadline_minutes = (p_minutes ->> s.severity::text)::int
+  where s.college_id = public.current_college_id();
+  get diagnostics v_updated = row_count;
+  if v_updated <> 4 then
+    raise exception 'insufficient_privilege' using errcode = '42501';
+  end if;
+end;
+$$;
+revoke all on function public.update_sla_rules(jsonb) from public, anon;
+grant execute on function public.update_sla_rules(jsonb) to authenticated;
+
 -- Deadline job every 15 minutes. Guarded so a stack without pg_cron still migrates.
 do $$
 begin

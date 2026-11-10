@@ -4,11 +4,12 @@ import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
 import { relativeDeadline, statusLabel } from "../issues/labels";
+import { SEVERITIES } from "@/modules/issues/schema";
 import { RunCheck, SlaForm, TriageForm } from "./forms";
 
 const ACTIVE = ["open", "assigned", "in_progress", "resolved_pending"];
 const STATUSES = [...ACTIVE, "closed", "closed_unverified"];
-const SEVERITIES = ["critical", "high", "medium", "low"];
+const OPEN_STATUSES = ["open", "assigned", "in_progress"];
 
 type Row = {
   id: string;
@@ -58,7 +59,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
   const severity = one(sp.severity);
   const location = one(sp.location);
   const statusF = status && STATUSES.includes(status) ? status : "";
-  const severityF = severity && SEVERITIES.includes(severity) ? severity : "";
+  const severityF = severity && (SEVERITIES as readonly string[]).includes(severity) ? severity : "";
   const locationF = location && UUID.test(location) ? location : "";
 
   let queueQuery = me.db
@@ -82,7 +83,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
           .from("issues")
           .select("id, title, locations(name)")
           .eq("needs_triage", true)
-          .in("status", ["open", "assigned", "in_progress"])
+          .in("status", OPEN_STATUSES)
           .order("created_at")
           .limit(50)
       : Promise.resolve({ data: [], error: null }),
@@ -255,7 +256,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<Record<string
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const overdue = ACTIVE.slice(0, 3).includes(r.status) && !!r.due_at && new Date(r.due_at).getTime() < now;
+                  const overdue = OPEN_STATUSES.includes(r.status) && !!r.due_at && new Date(r.due_at).getTime() < now;
                   return (
                     <tr key={r.id} className="border-b border-zinc-300">
                       <td className="p-2">
