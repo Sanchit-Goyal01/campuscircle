@@ -151,11 +151,18 @@ create policy post_photos_insert on storage.objects
     and (storage.foldername(name))[2] = (select auth.uid())::text
     and owner_id = (select auth.uid())::text
   );
+-- Readable by the uploader, or when a post the reader may see (posts RLS:
+-- same college, not hidden unless author/admin) uses the photo. Photos of
+-- hidden posts and unattached uploads stay private to their owner.
 create policy post_photos_select on storage.objects
   for select to authenticated
   using (
     bucket_id = 'post-photos'
     and (storage.foldername(name))[1] = (select public.current_college_id())::text
+    and (
+      (storage.foldername(name))[2] = (select auth.uid())::text
+      or exists (select 1 from public.posts p where p.photo_path = objects.name)
+    )
   );
 create policy post_photos_delete on storage.objects
   for delete to authenticated
@@ -168,6 +175,7 @@ create policy post_photos_delete on storage.objects
 -- Rolling log for the 20-posts-per-24h limit (deleting a post does not reset it).
 create table public.post_create_log (
   author_id uuid not null references public.profiles (id) on delete cascade,
+  college_id uuid not null references public.colleges (id) on delete cascade,
   created_at timestamptz not null default now()
 );
 create index post_create_log_author_idx on public.post_create_log (author_id, created_at);
@@ -204,7 +212,7 @@ begin
   insert into public.posts (college_id, author_id, body, photo_path)
   values (v_college, v_uid, v_body, nullif(btrim(p_photo_path), ''))
   returning id into v_id;
-  insert into public.post_create_log (author_id) values (v_uid);
+  insert into public.post_create_log (author_id, college_id) values (v_uid, v_college);
   return v_id;
 end;
 $$;

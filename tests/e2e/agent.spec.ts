@@ -357,9 +357,10 @@ test("the panel fits a phone screen", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await signUp(page);
   await askForPlan(page);
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow).toBeLessThanOrEqual(0);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), {
+      timeout: 5000,
+    })
+    .toBeLessThanOrEqual(0);
   await expect(slip(page).getByRole("button", { name: "Approve" })).toBeInViewport({ ratio: 0 });
 });

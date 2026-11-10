@@ -12,8 +12,8 @@ async function Feed({ searchParams }: { searchParams: Promise<{ before?: string 
   if (!me) return null; // layout renders the no-profile message
   const sp = await searchParams;
   const raw = Array.isArray(sp.before) ? sp.before[0] : sp.before;
-  const parsed = raw ? new Date(raw) : null;
-  const before = parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : undefined;
+  // Keep the raw string (microsecond precision); accept only ISO-like timestamps.
+  const before = raw && raw.length <= 40 && /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:?\d{2})$/.test(raw) && !Number.isNaN(Date.parse(raw)) ? raw : undefined;
   const rows = await listFeed(me.db, { before, limit: PAGE + 1, viewerId: me.userId });
   const posts = rows.slice(0, PAGE);
   const more = rows.length > PAGE;

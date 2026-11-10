@@ -17,7 +17,7 @@ export async function createPost(_prev: FeedState, formData: FormData): Promise<
   if (photo && !photo.startsWith(`${me.profile.college_id}/${me.userId}/`)) return { error: "The photo is not valid. Upload it again." };
   const { error } = await me.db.rpc("create_post", { p_body: body, p_photo_path: photo || null });
   if (error) {
-    if (error.code === "P0001") return { error: "You have posted too many times today. Try again tomorrow." };
+    if (error.code === "P0001" && error.message === "too_many_posts") return { error: "You have posted too many times today. Try again tomorrow." };
     if (error.code === "23514") return { error: "Check the post text and photo." };
     if (error.code === "42501") return { error: "You can't post to this feed." };
     console.error("Create post failed:", error.message);
@@ -39,7 +39,8 @@ export async function toggleLike(formData: FormData): Promise<void> {
   }
   if (!data || data.length === 0) {
     const ins = await me.db.from("post_likes").insert({ post_id: id });
-    if (ins.error && ins.error.code !== "23505") console.error("Like failed:", ins.error.message);
+    // 23505: already liked by a concurrent request. 42501: the post is hidden or not visible; nothing to do.
+    if (ins.error && ins.error.code !== "23505" && ins.error.code !== "42501") console.error("Like failed:", ins.error.message);
   }
   revalidatePath("/feed");
   revalidatePath(`/feed/${id}`);
@@ -54,7 +55,9 @@ export async function reportPost(_prev: FeedState, formData: FormData): Promise<
   if (!me) return { error: GENERIC };
   const { error } = await me.db.rpc("report_post", { p_post_id: id, p_reason: reason });
   if (error) {
-    if (error.code === "P0001") return { error: error.message };
+    if (error.code === "23505" || (error.code === "P0001" && error.message === "You already reported this post.")) {
+      return { error: "You already reported this post." };
+    }
     if (error.code === "42501") return { error: "You can't report this post." };
     if (error.code === "23514") return { error: "Write a reason of 3 to 300 characters." };
     console.error("Report post failed:", error.message);

@@ -126,4 +126,34 @@ describe("feed", { timeout: 60_000 }, () => {
       expect((await post(author, "bad photo", bad)).error?.code, bad).toBe("23514");
     }
   });
+
+  test("post photos: hidden-post and unattached photos are unreadable to other students", async () => {
+    const bytes = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: "image/jpeg" });
+    const up = async (name: string) => {
+      const path = `${collegeA}/${author.id}/${name}.jpg`;
+      const r = await author.client.storage.from("post-photos").upload(path, bytes, { contentType: "image/jpeg" });
+      expect(r.error).toBeNull();
+      return path;
+    };
+    const attached = await up(crypto.randomUUID());
+    const hiddenPath = await up(crypto.randomUUID());
+    const loose = await up(crypto.randomUUID());
+    const shown = (await post(author, "with photo", attached)).data as string;
+    const hid = (await post(author, "hidden photo", hiddenPath)).data as string;
+    expect(shown).toBeTruthy();
+    await adminClient().from("posts").update({ hidden_at: new Date().toISOString() }).eq("id", hid);
+    const bucket = (s: S) => s.client.storage.from("post-photos");
+    // attached to a visible post: same college reads it
+    expect((await bucket(reader).download(attached)).error).toBeNull();
+    // hidden post's photo: not for another student, still for its author
+    expect((await bucket(reader).createSignedUrl(hiddenPath, 60)).error).not.toBeNull();
+    expect((await bucket(reader).download(hiddenPath)).error).not.toBeNull();
+    expect((await bucket(author).download(hiddenPath)).error).toBeNull();
+    // uploaded but never attached: owner only
+    expect((await bucket(reader).download(loose)).error).not.toBeNull();
+    expect((await bucket(reader).createSignedUrl(loose, 60)).error).not.toBeNull();
+    expect((await bucket(author).download(loose)).error).toBeNull();
+    // other college never
+    expect((await bucket(studentB).download(attached)).error).not.toBeNull();
+  });
 });
