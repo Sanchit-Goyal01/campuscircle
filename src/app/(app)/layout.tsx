@@ -22,6 +22,12 @@ async function Shell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const { count } = await me.db
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .is("read_at", null);
+  const unread = count ?? 0;
+
   return (
     <div className="flex flex-1 flex-col md:flex-row">
       <aside className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-300 px-4 py-3 md:w-56 md:flex-col md:flex-nowrap md:items-stretch md:justify-start md:border-b-0 md:border-r">
@@ -44,6 +50,12 @@ async function Shell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/academics/papers" className="text-sm underline">
             Past papers
+          </Link>
+          <Link href="/issues" className="text-sm underline">
+            Campus issues
+          </Link>
+          <Link href="/notifications" className="text-sm underline">
+            {unread > 0 ? `Notifications (${unread})` : "Notifications"}
           </Link>
         </nav>
         <div className="md:mt-auto">
