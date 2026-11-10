@@ -18,6 +18,8 @@ let locA: string;
 let locB: string;
 let authority: U;
 let otherAdmin: U;
+let evidence: string;
+let foreignIssue: string;
 let student: U;
 let n = 0;
 
@@ -46,7 +48,6 @@ async function seed(loc: string, category: string, count: number, opts: { ageDay
 beforeAll(async () => {
   college = await createCollege(`RC ${run}`, dom);
   const other = await createCollege(`RO ${run}`, otherDom);
-  void other;
   const admin = adminClient();
   const mk = async (name: string) => {
     const { data, error } = await admin.from("locations").insert({ college_id: college, name }).select("id").single();
@@ -58,6 +59,14 @@ beforeAll(async () => {
   authority = await createUserWithRole(`au-${run}@${dom}`, "authority");
   otherAdmin = await createUserWithRole(`oa-${run}@${otherDom}`, "college_admin");
   student = await createStudent(`st-${run}@${dom}`);
+  [evidence] = await seed(locB, "other", 1);
+  const { data: fl } = await admin.from("locations").insert({ college_id: other, name: "Far" }).select("id").single();
+  const { data: fi } = await admin
+    .from("issues")
+    .insert({ college_id: other, location_id: fl!.id, category: "other", title: "Foreign", severity: "low" })
+    .select("id")
+    .single();
+  foreignIssue = fi!.id;
 });
 
 describe("root_cause_groups", () => {
@@ -66,10 +75,12 @@ describe("root_cause_groups", () => {
     await seed(locB, "water", 2);
     const { data, error } = await authority.client.rpc("root_cause_groups");
     expect(error).toBeNull();
-    expect(data).toHaveLength(1);
-    expect(data[0]).toMatchObject({ location_id: locA, location: "Hostel Block A", category: "water" });
-    expect([...data[0].issue_ids].sort()).toEqual([...water].sort());
-    expect(data[0].titles).toHaveLength(3);
+    const mine = data.filter((g: { location_id: string; category: string }) => g.location_id === locA && g.category === "water");
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ location: "Hostel Block A" });
+    expect([...mine[0].issue_ids].sort()).toEqual([...water].sort());
+    expect(mine[0].titles).toHaveLength(3);
+    expect(data.some((g: { location_id: string; category: string }) => g.location_id === locB && g.category === "water")).toBe(false);
   });
 
   test("group with a recent accepted insight is excluded", async () => {
@@ -113,12 +124,12 @@ describe("root_cause_insights", () => {
     category: "water",
     hypothesis: "Shared plumbing is failing on this floor.",
     confidence: "medium",
-    evidence_issue_ids: [],
+    evidence_issue_ids: [evidence],
     ...extra,
   });
 
   test("student cannot read or insert insights", async () => {
-    await adminClient().from("root_cause_insights").insert({ ...row(), college_id: college });
+    await adminClient().from("root_cause_insights").insert({ ...row({ category: "furniture", location_id: locB }), college_id: college });
     const read = await student.client.from("root_cause_insights").select("id");
     expect(read.data ?? []).toEqual([]);
     const ins = await student.client.from("root_cause_insights").insert({ ...row() });
@@ -126,7 +137,7 @@ describe("root_cause_insights", () => {
   });
 
   test("authority inserts proposed only; other college cannot read", async () => {
-    const ok = await authority.client.from("root_cause_insights").insert({ ...row() });
+    const ok = await authority.client.from("root_cause_insights").insert({ ...row({ category: "safety" }) });
     expect(ok.error).toBeNull();
     const accepted = await authority.client
       .from("root_cause_insights")
@@ -140,10 +151,53 @@ describe("root_cause_insights", () => {
     expect(read.data ?? []).toEqual([]);
   });
 
+  test("evidence must be non-empty and from the caller's college", async () => {
+    const foreign = await authority.client
+      .from("root_cause_insights")
+      .insert({ ...row({ category: "sanitation", evidence_issue_ids: [evidence, foreignIssue] }) });
+    expect(foreign.error).not.toBeNull();
+    const empty = await authority.client
+      .from("root_cause_insights")
+      .insert({ ...row({ category: "sanitation", evidence_issue_ids: [] }) });
+    expect(empty.error).not.toBeNull();
+  });
+
+  test("client-supplied college_id is refused", async () => {
+    const r = await authority.client
+      .from("root_cause_insights")
+      .insert({ ...row({ category: "sanitation" }), college_id: college });
+    expect(r.error).not.toBeNull();
+  });
+
+  test("a second proposed insight for the same place and category is refused", async () => {
+    const a = await authority.client.from("root_cause_insights").insert({ ...row({ category: "electricity" }) });
+    expect(a.error).toBeNull();
+    const b = await authority.client.from("root_cause_insights").insert({ ...row({ category: "electricity" }) });
+    expect(b.error?.code).toBe("23505");
+  });
+
+  test("another college's authority cannot update or insert", async () => {
+    const { data: ins } = await authority.client
+      .from("root_cause_insights")
+      .insert({ ...row({ category: "other" }) })
+      .select("id")
+      .single();
+    const upd = await otherAdmin.client
+      .from("root_cause_insights")
+      .update({ status: "dismissed", decided_by: otherAdmin.id })
+      .eq("id", ins!.id)
+      .select("id");
+    expect(upd.error !== null || (upd.data ?? []).length === 0).toBe(true);
+    const { data: still } = await adminClient().from("root_cause_insights").select("status").eq("id", ins!.id).single();
+    expect(still!.status).toBe("proposed");
+    const other = await otherAdmin.client.from("root_cause_insights").insert({ ...row({ category: "other" }) });
+    expect(other.error).not.toBeNull();
+  });
+
   test("authority accepts an insight and decided_by is set", async () => {
     const { data: ins } = await authority.client
       .from("root_cause_insights")
-      .insert({ ...row() })
+      .insert({ ...row({ category: "internet" }) })
       .select("id")
       .single();
     const upd = await authority.client
@@ -188,7 +242,8 @@ describe("POST /api/issues/insights/run", () => {
     const { data } = await authority.client
       .from("root_cause_insights")
       .select("status, category")
-      .eq("category", "furniture");
+      .eq("category", "furniture")
+      .eq("location_id", locA);
     expect(data).toEqual([{ status: "proposed", category: "furniture" }]);
     vi.unstubAllEnvs();
   });

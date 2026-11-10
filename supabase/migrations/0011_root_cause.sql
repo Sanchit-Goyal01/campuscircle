@@ -20,6 +20,11 @@ create index root_cause_insights_college_idx on public.root_cause_insights (coll
 create index root_cause_insights_location_idx on public.root_cause_insights (location_id);
 create index root_cause_insights_decided_by_idx on public.root_cause_insights (decided_by);
 
+-- One open proposal per place and category; also stops concurrent runs doubling up.
+create unique index root_cause_insights_one_proposed_idx
+  on public.root_cause_insights (college_id, location_id, category)
+  where status = 'proposed';
+
 alter table public.root_cause_insights enable row level security;
 revoke all on public.root_cause_insights from anon, authenticated;
 grant select on public.root_cause_insights to authenticated;
@@ -42,6 +47,14 @@ create policy root_cause_insights_insert on public.root_cause_insights
     and status = 'proposed'
     and decided_by is null
     and exists (select 1 from public.locations l where l.id = location_id)
+    and cardinality(evidence_issue_ids) > 0
+    and not exists (
+      select 1 from unnest(evidence_issue_ids) as e (id)
+      where not exists (
+        select 1 from public.issues i
+        where i.id = e.id and i.college_id = (select public.current_college_id())
+      )
+    )
   );
 
 create policy root_cause_insights_update on public.root_cause_insights

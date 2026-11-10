@@ -105,6 +105,7 @@ export async function decideInsight(insightId: string, status: string): Promise<
   if (!UUID.test(insightId) || (status !== "accepted" && status !== "dismissed")) return { error: GENERIC };
   const me = await getProfile();
   if (!me) return { error: GENERIC };
+  if (me.profile.role !== "authority" && me.profile.role !== "college_admin") return { error: DENIED };
   const { data, error } = await me.db
     .from("root_cause_insights")
     .update({ status, decided_by: me.userId })
