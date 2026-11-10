@@ -54,6 +54,11 @@ async function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/issues" className="text-sm underline">
             Campus issues
           </Link>
+          {(me.profile.role === "authority" || me.profile.role === "college_admin") && (
+            <Link href="/authority" className="text-sm underline">
+              Dashboard
+            </Link>
+          )}
           <Link href="/notifications" className="text-sm underline">
             {unread > 0 ? `Notifications (${unread})` : "Notifications"}
           </Link>
