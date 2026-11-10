@@ -58,3 +58,14 @@ set bio = 'Third-year Computer Science student. Happy to help with databases and
                      where college_id = '00000000-0000-0000-0000-00000000a001'
                        and name = 'Computer Science')
 where id = '00000000-0000-0000-0000-0000000000a9';
+
+-- Demo listing, sold by the seeded student above. No photo.
+insert into public.listings (id, college_id, seller_id, title, description, price_inr, condition)
+values (
+  '00000000-0000-0000-0000-0000000000b1',
+  '00000000-0000-0000-0000-00000000a001',
+  '00000000-0000-0000-0000-0000000000a9',
+  'Database System Concepts (Korth), used',
+  'Sixth edition of the DBMS textbook by Korth, Silberschatz and Sudarshan. Some highlighting in the first chapters, no torn pages.',
+  450, 'good'
+) on conflict do nothing;

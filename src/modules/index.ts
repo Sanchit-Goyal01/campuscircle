@@ -8,6 +8,7 @@ import {
   searchNotes,
 } from './academics/tools';
 import { fileComplaint, getCampusStatus, getMyComplaints } from './issues/tools';
+import { searchListingsTool } from './market/tools';
 import { findMentor, findTeammates, getMyProfile, requestMentorship } from './people/tools';
 
 export const allTools: AgentTool[] = [
@@ -24,4 +25,5 @@ export const allTools: AgentTool[] = [
   findMentor,
   findTeammates,
   requestMentorship,
+  searchListingsTool,
 ];
