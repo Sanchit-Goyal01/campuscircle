@@ -98,7 +98,11 @@ begin
     raise exception 'invalid_report' using errcode = '23514';
   end if;
   foreach v_path in array v_photos loop
-    if v_path is null or left(v_path, length(v_college::text) + 1) <> v_college::text || '/' then
+    if v_path is null or position('..' in v_path) > 0
+       or left(v_path, length(v_college::text) + 1) <> v_college::text || '/'
+       or not exists (select 1 from storage.objects o
+                      where o.bucket_id = 'issue-photos' and o.name = v_path
+                        and o.owner_id = v_uid::text) then
       raise exception 'insufficient_privilege' using errcode = '42501';
     end if;
   end loop;
@@ -127,6 +131,10 @@ begin
       and lower(d.name) = lower(btrim(coalesce(p_classification ->> 'department', '')));
   end if;
   v_triage := v_dept is null or v_severity is null;
+  if not v_triage and v_title is null then
+    select initcap(coalesce(v_category, 'general')) || ' issue at ' || l.name
+      into v_title from public.locations l where l.id = p_location;
+  end if;
 
   if p_merge_issue_id is not null then
     select * into v_issue from public.issues i
@@ -159,8 +167,7 @@ begin
     insert into public.issues (college_id, location_id, department_id, category, severity,
                                title, needs_triage, due_at, embedding)
     values (v_college, p_location, v_dept, v_category, v_severity,
-            case when v_title is null and v_triage then 'Untriaged report'
-                 else coalesce(left(v_title, 200), 'Untriaged report') end,
+            coalesce(left(v_title, 200), 'Untriaged report'),
             v_triage,
             case when v_triage then null
                  else public.issue_due_at(v_college, v_severity, now()) end,
@@ -219,12 +226,16 @@ declare
   v_dept uuid;
   v_issue public.issues;
 begin
-  if v_uid is null or v_college is null or v_role not in ('authority', 'college_admin') then
+  if v_uid is null or v_college is null
+     or coalesce(v_role in ('authority', 'college_admin'), false) is not true then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
   select * into v_issue from public.issues
   where id = p_issue and college_id = v_college for update;
   if not found then
+    raise exception 'insufficient_privilege' using errcode = '42501';
+  end if;
+  if v_issue.needs_triage then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
   if v_role = 'authority' then
@@ -284,7 +295,8 @@ begin
   end if;
   select * into v_issue from public.issues
   where id = p_issue and college_id = v_college for update;
-  if not found
+  if not found or not v_issue.needs_triage
+     or v_issue.status not in ('open', 'assigned', 'in_progress')
      or not exists (select 1 from public.departments d
                     where d.id = p_department and d.college_id = v_college) then
     raise exception 'insufficient_privilege' using errcode = '42501';
@@ -518,7 +530,7 @@ declare
   v_unverified int;
 begin
   if v_college is null
-     or public.app_role_of_user() not in ('authority', 'college_admin') then
+     or coalesce(public.app_role_of_user() in ('authority', 'college_admin'), false) is not true then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
   select count(*) filter (where status = 'closed'),

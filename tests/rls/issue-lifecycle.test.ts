@@ -72,6 +72,10 @@ async function makeIssue(count: number) {
   }
   return { issueId, students };
 }
+async function vote(u: U, issueId: string, fixed: boolean) {
+  const r = await u.client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: fixed });
+  expect(r.error).toBeNull();
+}
 async function resolvePending(issueId: string) {
   const a = await authHostel.client.rpc("transition_issue", { p_issue: issueId, p_to: "in_progress" });
   expect(a.error).toBeNull();
@@ -202,16 +206,38 @@ describe("intake", () => {
     expect(r.error?.code).toBe("23514");
   });
 
-  test("photo path outside the college folder is refused", async () => {
-    const r = await (await newStudent()).client.rpc("submit_issue_report", {
-      p_location: locA,
-      p_body: body,
-      p_photo_paths: [`${collegeB}/x/y.jpg`],
-      p_classification: cls(),
-      p_embedding: emb(),
-      p_merge_issue_id: null,
-    });
-    expect(r.error?.code).toBe("42501");
+  test("photo paths: traversal, wrong prefix, foreign and unknown paths are refused; own upload accepted", async () => {
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+    const owner = await newStudent();
+    const other = await newStudent();
+    const mine = `${collegeA}/draft-${run}/mine.png`;
+    const theirs = `${collegeA}/draft-${run}/theirs.png`;
+    expect((await owner.client.storage.from("issue-photos").upload(mine, png, { contentType: "image/png" })).error).toBeNull();
+    expect((await other.client.storage.from("issue-photos").upload(theirs, png, { contentType: "image/png" })).error).toBeNull();
+    const submit = (u: U, paths: string[]) =>
+      u.client.rpc("submit_issue_report", {
+        p_location: locA, p_body: body, p_photo_paths: paths, p_classification: cls(),
+        p_embedding: emb(), p_merge_issue_id: null,
+      });
+    for (const bad of [
+      `${collegeB}/x/y.jpg`,
+      `${collegeA}/../x`,
+      `${collegeA}x/..`,
+      `${collegeA}x/draft/mine.png`,
+      `${collegeA}0/draft/mine.png`,
+      `${collegeA}/draft-${run}/missing.png`,
+      theirs,
+    ]) {
+      expect((await submit(owner, [bad])).error?.code).toBe("42501");
+    }
+    const ok = await submit(owner, [mine]);
+    expect(ok.error).toBeNull();
+  });
+
+  test("classification without a title falls back to category and location", async () => {
+    const r = await report(await newStudent(), locA, { category: "water", severity: "high", department: "Hostel" });
+    expect(r.data.needs_triage).toBe(false);
+    expect((await issueOf(r.data.issue_id)).title).toBe("Water issue at Block A");
   });
 
   test("report from an authority is refused", async () => {
@@ -268,6 +294,17 @@ describe("transitions", () => {
     for (const s of students) expect(await notifs(s.id, "confirm_fix", issueId)).toHaveLength(1);
   });
 
+  test("triage_issue refused on a triaged issue; transition refused while untriaged", async () => {
+    const triaged = (await makeIssue(1)).issueId;
+    const again = await admin.client.rpc("triage_issue", {
+      p_issue: triaged, p_department: hostelDept, p_category: "water", p_severity: "low", p_title: "x",
+    });
+    expect(again.error?.code).toBe("42501");
+    const untriaged = (await report(await newStudent(), locA, null)).data.issue_id;
+    const t = await admin.client.rpc("transition_issue", { p_issue: untriaged, p_to: "in_progress" });
+    expect(t.error?.code).toBe("42501");
+  });
+
   test("admin can triage and the department is notified", async () => {
     const r = await report(await newStudent(), locA, null);
     const id = r.data.issue_id;
@@ -297,8 +334,8 @@ describe("votes", () => {
   test("second vote replaces the first", async () => {
     const { issueId, students } = await makeIssue(2);
     await resolvePending(issueId);
-    await students[0].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: false });
-    await students[0].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: true });
+    await vote(students[0], issueId, false);
+    await vote(students[0], issueId, true);
     const v = await adminClient().from("issue_confirmations").select("fixed").eq("issue_id", issueId);
     expect(v.data).toEqual([{ fixed: true }]);
     expect((await issueOf(issueId)).status).toBe("resolved_pending");
@@ -307,10 +344,10 @@ describe("votes", () => {
   test("2 fixed vs 1 not fixed closes", async () => {
     const { issueId, students } = await makeIssue(3);
     await resolvePending(issueId);
-    await students[0].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: true });
-    await students[1].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: false });
+    await vote(students[0], issueId, true);
+    await vote(students[1], issueId, false);
     expect((await issueOf(issueId)).status).toBe("resolved_pending");
-    await students[2].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: true });
+    await vote(students[2], issueId, true);
     const i = await issueOf(issueId);
     expect(i.status).toBe("closed");
     expect(i.closed_at).not.toBeNull();
@@ -321,8 +358,8 @@ describe("votes", () => {
     const { issueId, students } = await makeIssue(2);
     await resolvePending(issueId);
     await adminClient().from("issues").update({ escalation_level: 1 }).eq("id", issueId);
-    await students[0].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: true });
-    await students[1].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: false });
+    await vote(students[0], issueId, true);
+    await vote(students[1], issueId, false);
     const i = await issueOf(issueId);
     expect(i.status).toBe("in_progress");
     expect(i.escalation_level).toBe(0);
@@ -429,8 +466,8 @@ describe("anonymity", () => {
   test("no event, report or notification visible to the authority carries a student id", async () => {
     const { issueId, students } = await makeIssue(2);
     await resolvePending(issueId);
-    await students[0].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: true });
-    await students[1].client.rpc("confirm_issue_fix", { p_issue: issueId, p_fixed: false });
+    await vote(students[0], issueId, true);
+    await vote(students[1], issueId, false);
     const ids = [s1.id, s2.id, s3.id, ...students.map((s) => s.id)];
     const c = authHostel.client;
     for (const table of ["issue_events", "issue_reports", "issues", "notifications", "issue_reporters", "issue_confirmations"]) {
