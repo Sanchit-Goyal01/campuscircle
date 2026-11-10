@@ -72,10 +72,10 @@ beforeAll(async () => {
   const bio = await mkSubject("CS2", "Biology");
   const calc = await mkSubject("CS3", "Calculus");
   const rows = [
-    { student_id: A.id, subject_id: calc, semester: 2, marks: 70, grade_points: 7 },
-    { student_id: A.id, subject_id: bio, semester: 1, marks: 80, grade_points: 8 },
-    { student_id: A.id, subject_id: algo, semester: 1, marks: 90, grade_points: 9 },
-    { student_id: B.id, subject_id: algo, semester: 1, marks: 50, grade_points: 5 },
+    { student_id: A.id, subject_id: calc, semester: 2, marks: 70, grade_points: 8 },
+    { student_id: A.id, subject_id: bio, semester: 1, marks: 80, grade_points: 9 },
+    { student_id: A.id, subject_id: algo, semester: 1, marks: 90, grade_points: 10 },
+    { student_id: B.id, subject_id: algo, semester: 1, marks: 50, grade_points: 6 },
   ].map((r) => ({ ...r, college_id: college }));
   const { error } = await admin.from("subject_results").insert(rows);
   expect(error).toBeNull();
@@ -89,9 +89,9 @@ describe("get_marks", () => {
     expect(out).toEqual({
       status: "ok",
       result: [
-        { semester: 1, subject: "Algo", marks: 90, grade_points: 9 },
-        { semester: 1, subject: "Biology", marks: 80, grade_points: 8 },
-        { semester: 2, subject: "Calculus", marks: 70, grade_points: 7 },
+        { semester: 1, subject: "Algo", marks: 90, grade_points: 10 },
+        { semester: 1, subject: "Biology", marks: 80, grade_points: 9 },
+        { semester: 2, subject: "Calculus", marks: 70, grade_points: 8 },
       ],
     });
   });
@@ -100,7 +100,7 @@ describe("get_marks", () => {
     const out = await executeToolCall({ name: "get_marks", input: { semester: 2 } }, allTools, ctxFor(A), await newRun(A));
     expect(out).toEqual({
       status: "ok",
-      result: [{ semester: 2, subject: "Calculus", marks: 70, grade_points: 7 }],
+      result: [{ semester: 2, subject: "Calculus", marks: 70, grade_points: 8 }],
     });
   });
 
