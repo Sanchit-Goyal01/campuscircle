@@ -43,5 +43,11 @@ export type AgentMessage =
 export type ModelTurn = { text: string; toolCalls: { id: string; name: string; input: unknown }[] };
 
 export interface ModelClient {
-  next(args: { system: string; messages: AgentMessage[]; tools: ToolSpec[] }): Promise<ModelTurn>;
+  /** `toolChoice` forces the model to call that tool (used by study help's submit_* tools). */
+  next(args: {
+    system: string;
+    messages: AgentMessage[];
+    tools: ToolSpec[];
+    toolChoice?: { name: string };
+  }): Promise<ModelTurn>;
 }

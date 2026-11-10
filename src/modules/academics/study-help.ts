@@ -61,7 +61,8 @@ const quizInput = z.object({
         page: z.number().int().min(1),
       }),
     )
-    .min(QUIZ_QUESTIONS),
+    .min(QUIZ_QUESTIONS)
+    .max(10),
 });
 
 const TOOLS = {
@@ -189,6 +190,10 @@ export async function studyHelp(args: {
   if (note.status === 'not_searchable') throw new StudyHelpError('note_not_searchable');
   if (note.status !== 'ready') throw new StudyHelpError('note_not_ready');
 
+  const chunks = await loadChunks({ db, noteId, mode, question: args.question, embed: args.embed ?? edgeEmbedder });
+  if (chunks.length === 0) throw new StudyHelpError('note_not_searchable');
+
+  // Claimed only now that the note text is loaded, right before the model call.
   const { data: claimed, error: claimErr } = await db.rpc('claim_study_help', {
     p_note_id: noteId,
     p_mode: mode,
@@ -197,9 +202,6 @@ export async function studyHelp(args: {
   });
   if (claimErr) throw new Error(`Could not check the daily limit: ${claimErr.message}`);
   if (claimed !== true) throw new StudyHelpError('daily_limit');
-
-  const chunks = await loadChunks({ db, noteId, mode, question: args.question, embed: args.embed ?? edgeEmbedder });
-  if (chunks.length === 0) throw new StudyHelpError('note_not_searchable');
 
   const tool = TOOLS[mode];
   const spec: ToolSpec = {
@@ -214,6 +216,7 @@ export async function studyHelp(args: {
       system: systemPrompt(mode),
       messages: [{ role: 'user', content: request + fenceNote(chunks) }],
       tools: [spec],
+      toolChoice: { name: tool.name },
     });
   } catch (e) {
     return fail('model call threw', e);

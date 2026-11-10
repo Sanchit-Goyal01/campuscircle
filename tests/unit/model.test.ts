@@ -16,6 +16,24 @@ function fakeClient(...responses: unknown[]) {
   return { create, client: { beta: { messages: { create } } } };
 }
 
+describe("forced tool choice", () => {
+  test("the request carries tool_choice and turns thinking off", async () => {
+    const { create, client } = fakeClient({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" });
+    const model = createClaudeModel({ client: client as never, model: "m" });
+    await model.next({ ...args("hi"), toolChoice: { name: "submit_answer" } });
+    const body = create.mock.calls[0][0];
+    expect(body.tool_choice).toEqual({ type: "tool", name: "submit_answer" });
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  test("without toolChoice the request has neither", async () => {
+    const { create, client } = fakeClient({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" });
+    await createClaudeModel({ client: client as never, model: "m" }).next(args("hi"));
+    expect(create.mock.calls[0][0]).not.toHaveProperty("tool_choice");
+    expect(create.mock.calls[0][0]).not.toHaveProperty("thinking");
+  });
+});
+
 describe("getModelClient", () => {
   test("getModelClient refuses the scripted model when NODE_ENV is production", () => {
     vi.stubEnv("NODE_ENV", "production");

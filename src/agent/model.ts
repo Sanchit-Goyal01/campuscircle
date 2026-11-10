@@ -78,25 +78,42 @@ function toClaudeTool({ input_schema, ...tool }: ToolSpec): ClaudeTool {
   return { ...tool, input_schema: schema as ClaudeTool['input_schema'] };
 }
 
+type CreateParams = Parameters<Anthropic['beta']['messages']['create']>[0];
+
+/**
+ * A forced tool_choice is incompatible with extended thinking, so a forced call
+ * turns thinking off. Unforced agent calls keep the model default.
+ */
+export function buildRequest(
+  deps: { model: string },
+  args: { system: string; messages: AgentMessage[]; tools: ToolSpec[]; toolChoice?: { name: string } },
+  replays: ReadonlyMap<string, ClaudeBlockParam[]>,
+) {
+  return {
+    model: deps.model,
+    max_tokens: MAX_TOKENS,
+    output_config: { effort: 'medium' },
+    betas: [FALLBACK_BETA],
+    fallbacks: 'default',
+    system: args.system,
+    messages: toClaudeMessages(args.messages, replays),
+    tools: args.tools.map(toClaudeTool),
+    ...(args.toolChoice
+      ? { tool_choice: { type: 'tool', name: args.toolChoice.name }, thinking: { type: 'disabled' } }
+      : {}),
+  } as CreateParams & { stream?: false };
+}
+
 type MessagesClient = { beta: { messages: Pick<Anthropic['beta']['messages'], 'create'> } };
 
 /** A client holds one run's replay state, so make a new one for each run. */
 export function createClaudeModel(deps: { client: MessagesClient; model: string }): ModelClient {
   const replays = new Map<string, ClaudeBlockParam[]>();
   return {
-    async next({ system, messages, tools }) {
+    async next(args) {
       let response: ClaudeMessage;
       try {
-        response = await deps.client.beta.messages.create({
-          model: deps.model,
-          max_tokens: MAX_TOKENS,
-          output_config: { effort: 'medium' },
-          betas: [FALLBACK_BETA],
-          fallbacks: 'default',
-          system,
-          messages: toClaudeMessages(messages, replays),
-          tools: tools.map(toClaudeTool),
-        });
+        response = await deps.client.beta.messages.create(buildRequest(deps, args, replays));
       } catch (e) {
         if (!(e instanceof Anthropic.APIError)) throw e;
         // The API's own message goes to the log; this one is stored in the run's trace.
