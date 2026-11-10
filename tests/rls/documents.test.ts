@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adminClient, createCollege, createStudent } from "../helpers/supabase";
-import { ingestNote, UploadError, uploadPaper } from "../../src/modules/academics/ingest";
+import { ingestNote, uploadPaper } from "../../src/modules/academics/ingest";
 import type { Embedder } from "../../src/modules/academics/embed";
 import { imageOnlyPdf, textPdf } from "../fixtures/pdf";
 
@@ -26,6 +26,12 @@ function fakeVector(text: string): number[] {
   }
   const n = Math.hypot(...v) || 1;
   return v.map((x) => x / n);
+}
+function decoyVector(q: number[], i: number, n: number): number[] {
+  const t = 0.05 + 0.5 * (i / n);
+  const v = q.map((x, d) => (1 - t) * x + t * Math.sin(i * 12.9898 + d * 78.233) * 0.1);
+  const norm = Math.hypot(...v);
+  return v.map((x) => x / norm);
 }
 const fake: Embedder = async (_db, texts) => texts.map(fakeVector);
 
@@ -224,9 +230,9 @@ describe("documents", () => {
       code: "not_pdf",
     });
     const fakePdf = new File(["not really a pdf"], "a.pdf", { type: "application/pdf" });
-    await expect(ingestNote(student.client, c, { file: fakePdf, title: "t", subjectId: null }, fake)).rejects.toBeInstanceOf(
-      UploadError,
-    );
+    await expect(ingestNote(student.client, c, { file: fakePdf, title: "t", subjectId: null }, fake)).rejects.toMatchObject({
+      code: "not_pdf",
+    });
     const big = new File([new Uint8Array(21 * 1024 * 1024)], "big.pdf", { type: "application/pdf" });
     await expect(ingestNote(student.client, c, { file: big, title: "t", subjectId: null }, fake)).rejects.toMatchObject({
       code: "too_large",
@@ -241,6 +247,100 @@ describe("documents", () => {
     await expect(
       ingestNote(student.client, ctxOf(student, college), { file: f, title: "t", subjectId: null }, fake),
     ).rejects.toMatchObject({ code: "too_many_pages" });
+  });
+
+  test("a failure while storing chunks leaves zero chunks and a failed note", async () => {
+    // 150 chunks; the last vector has the wrong dimension, so the insert is refused.
+    const bad: Embedder = async (_db, texts) =>
+      texts.map((t, i) => (i === texts.length - 1 ? [1, 2, 3] : fakeVector(t)));
+    const longText = Array.from({ length: 2600 }, (_, i) => `w${i % 97}`).join(" ");
+    const { noteId, status } = await ingestNote(
+      student.client,
+      ctxOf(student, college),
+      { file: pdfFile(await textPdf([longText, longText, longText])), title: "Atomic", subjectId: null },
+      bad,
+    );
+    expect(status).toBe("failed");
+    const admin = adminClient();
+    const { count } = await admin.from("note_chunks").select("id", { count: "exact", head: true }).eq("note_id", noteId);
+    expect(count).toBe(0);
+    expect((await admin.from("notes").select("status").eq("id", noteId).single()).data!.status).toBe("failed");
+  });
+
+  test("search still finds ready chunks behind thousands of nearer filtered-out ones", async () => {
+    const admin = adminClient();
+    // The query is far from the target and identical to every decoy, so all
+    // of HNSW's first candidates are decoys that RLS and the filter then drop.
+    const q = fakeVector("unrelated query words about algebra and calculus homework");
+    // Thousands of nearer decoys in a note that is still processing: same college,
+    // so only the status filter (applied after the HNSW scan) drops them.
+    const { data: decoyNote } = await admin
+      .from("notes")
+      .insert({ college_id: college, uploaded_by: student.id, title: "Decoys", file_path: `${college}/notes/d.pdf`, status: "processing" })
+      .select("id")
+      .single();
+        // Many ready notes make `status = 'ready'` look unselective, so the planner
+    // scans the HNSW index first and filters afterwards, as it would at scale.
+    const readyNotes = await admin
+      .from("notes")
+      .insert(
+        Array.from({ length: 200 }, (_, i) => ({
+          college_id: college, uploaded_by: student.id, title: `Filler ${i}`,
+          file_path: `${college}/notes/f${i}.pdf`, status: "ready",
+        })),
+      )
+      .select("id");
+    expect(readyNotes.error).toBeNull();
+    const rows = Array.from({ length: 12000 }, (_, i) => ({
+      note_id: decoyNote!.id, college_id: college, page: 1, seq: i, content: "decoy",
+      // A continuum from the query towards random directions: every decoy stays
+      // nearer to the query than the target, yet the HNSW graph stays connected.
+      embedding: JSON.stringify(decoyVector(q, i, 12000)),
+    }));
+    for (let i = 0; i < rows.length; i += 1000) {
+      expect((await admin.from("note_chunks").insert(rows.slice(i, i + 1000))).error).toBeNull();
+    }
+    // Ingested after the decoys so it is linked into the HNSW graph like any later upload.
+    const target = await ingest(["zebra crossing paint stripes zebra herd migration savanna zebra"], "Zebra");
+    const { data, error } = await student.client.rpc("match_note_chunks", {
+      query_embedding: JSON.stringify(q),
+      match_count: 50,
+    });
+    expect(error).toBeNull();
+    expect(data!.map((r: { note_id: string }) => r.note_id)).toContain(target.noteId);
+  }, 120_000);
+
+  test("an outsider cannot insert a note pointing at college A", async () => {
+    const forged = { uploaded_by: outsider.id, title: "x", file_path: `${college}/notes/${crypto.randomUUID()}.pdf` };
+    const a = await outsider.client.from("notes").insert({ ...forged, college_id: college });
+    expect(a.error?.code).toBe("42501");
+    const b = await outsider.client.from("notes").insert({ ...forged, college_id: otherCollege });
+    expect(b.error?.code).toBe("42501");
+  });
+
+  test("a paper with a foreign-college subject is refused", async () => {
+    const { data: foreign } = await adminClient()
+      .from("subjects")
+      .insert({ college_id: otherCollege, code: `F${run}`, name: "Foreign", credits: 3 })
+      .select("id")
+      .single();
+    const { error } = await student.client.from("past_papers").insert({
+      college_id: college,
+      uploaded_by: student.id,
+      subject_id: foreign!.id,
+      year: 2024,
+      exam_type: "quiz",
+      file_path: `${college}/papers/${crypto.randomUUID()}.pdf`,
+    });
+    expect(error?.code).toBe("42501");
+  });
+
+  test("a classmate can download the uploaded file from Storage", async () => {
+    const { noteId } = await ingest(["classmates may read the shared study file freely here today"], "Shared");
+    const { data: note } = await adminClient().from("notes").select("file_path").eq("id", noteId).single();
+    const dl = await mate.client.storage.from("academics").download(note!.file_path);
+    expect(dl.error).toBeNull();
+    expect(dl.data!.size).toBeGreaterThan(0);
   });
 
   test("edge embed function returns 384 numbers for a signed-in student", async () => {

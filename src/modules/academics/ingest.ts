@@ -97,7 +97,8 @@ export async function ingestNote(
       .from('notes')
       .update({ status, page_count: pages.length })
       .eq('id', noteId);
-    if (upErr) throw new Error(`Could not update the note: ${upErr.message}`);
+    // A failed update to `failed` is reported as failed anyway; the caller can delete and retry.
+    if (upErr && status !== 'failed') throw new Error(`Could not update the note: ${upErr.message}`);
     return { noteId, status };
   };
 
@@ -107,18 +108,13 @@ export async function ingestNote(
     const chunks = chunkPages(pages);
     const vectors = await embed(db, chunks.map((c) => c.content));
     if (vectors.length !== chunks.length) throw new Error('embedding count mismatch');
-    const rows = chunks.map((c, i) => ({
-      note_id: noteId,
-      college_id: ctx.collegeId,
-      page: c.page,
-      seq: c.seq,
-      content: c.content,
-      embedding: JSON.stringify(vectors[i]),
-    }));
-    for (let i = 0; i < rows.length; i += 100) {
-      const { error: insErr } = await db.from('note_chunks').insert(rows.slice(i, i + 100));
-      if (insErr) throw new Error(insErr.message);
-    }
+    const rows = chunks.map((c, i) => ({ ...c, embedding: JSON.stringify(vectors[i]) }));
+    // One statement: either every chunk is stored or none is.
+    const { error: insErr } = await db.rpc('insert_note_chunks', {
+      p_note_id: noteId,
+      p_chunks: rows,
+    });
+    if (insErr) throw new Error(insErr.message);
   } catch {
     // The file stays so the student can delete the note and retry.
     return finish('failed');

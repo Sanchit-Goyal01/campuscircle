@@ -17,6 +17,7 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: "rls",
+          globalSetup: ["tests/rls/edge-setup.ts"],
           include: ["tests/rls/**/*.test.ts"],
           fileParallelism: false,
         },

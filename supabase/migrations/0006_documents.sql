@@ -134,6 +134,9 @@ language sql
 stable
 security invoker
 set search_path = public, extensions
+-- HNSW yields only ~ef_search candidates before RLS, status and filters apply;
+-- iterative scan keeps scanning until enough rows survive them.
+set hnsw.iterative_scan = 'relaxed_order'
 as $$
   select c.note_id, n.title, c.page, c.content,
          (1 - (c.embedding <=> query_embedding))::float as similarity
@@ -147,6 +150,23 @@ as $$
 $$;
 revoke all on function public.match_note_chunks(extensions.vector, int, uuid, uuid) from public, anon;
 grant execute on function public.match_note_chunks(extensions.vector, int, uuid, uuid) to authenticated;
+
+-- Inserts all of a note's chunks in one statement, so a bad row leaves none.
+-- Security invoker: the note_chunks insert policy applies to every row.
+create function public.insert_note_chunks(p_note_id uuid, p_chunks jsonb)
+returns void
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+  insert into public.note_chunks (note_id, college_id, page, seq, content, embedding)
+  select p_note_id, (select public.current_college_id()),
+         (c->>'page')::int, (c->>'seq')::int, c->>'content',
+         (c->>'embedding')::extensions.vector(384)
+  from jsonb_array_elements(p_chunks) as c
+$$;
+revoke all on function public.insert_note_chunks(uuid, jsonb) from public, anon;
+grant execute on function public.insert_note_chunks(uuid, jsonb) to authenticated;
 
 -- Storage: private bucket, PDF only, 20 MB.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
