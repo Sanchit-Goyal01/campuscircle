@@ -66,7 +66,7 @@ export async function submitReport(_prev: ReportState, formData: FormData): Prom
     .eq("id", result.issue_id)
     .maybeSingle();
   const dept = (issue as unknown as { departments: { name: string } | null } | null)?.departments?.name ?? null;
-  revalidatePath("/issues");
+  revalidatePath("/", "layout");
   return {
     ok: true,
     merged: result.merged,
@@ -101,6 +101,6 @@ export async function markRead(id: string): Promise<{ error?: string }> {
   // RLS limits updates to the user's own rows.
   const { error } = await me.db.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", id);
   if (error) return { error: "Could not mark this as read." };
-  revalidatePath("/notifications");
+  revalidatePath("/", "layout");
   return {};
 }

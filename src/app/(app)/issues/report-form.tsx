@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { submitReport, type ReportState } from "./actions";
 
 type Location = { id: string; name: string };
@@ -9,7 +9,9 @@ const UPLOAD_FAILED = "Could not upload the photos. Try again.";
 
 export function resultMessage(s: ReportState): string | null {
   if (!s.ok) return null;
-  if (s.merged) return `Added to an existing report. ${s.reporters ?? 2} students have reported this.`;
+  if (s.merged) {
+    return s.reporters ? `Added to an existing report. ${s.reporters} students have reported this.` : "Added to an existing report.";
+  }
   if (s.needs_triage || !s.department) return "Report received. A college admin will route it.";
   return `Report received. It has been sent to the ${s.department} team.`;
 }
@@ -17,14 +19,17 @@ export function resultMessage(s: ReportState): string | null {
 export function ReportForm({ locations }: { locations: Location[] }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, dispatch, pending] = useActionState<ReportState, FormData>(submitReport, {});
+  // Clear the form only once the server accepted the report; a failure keeps what was typed.
+  useEffect(() => {
+    if (state.ok) formRef.current?.reset();
+  }, [state]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setUploadError(null);
-    const form = e.currentTarget;
-    const data = new FormData(form);
+    const data = new FormData(e.currentTarget);
     const files = data.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
     data.delete("photos");
     if (files.length > 0) {
@@ -47,7 +52,6 @@ export function ReportForm({ locations }: { locations: Location[] }) {
       }
     }
     startTransition(() => dispatch(data));
-    form.reset();
   }
 
   const message = resultMessage(state);

@@ -35,7 +35,7 @@ async function Notifications() {
               <div>{n.body}</div>
               <div>{formatWhen(n.created_at)}</div>
               <div className="flex flex-wrap items-center gap-3">
-                {n.link?.startsWith("/") && (
+                {n.link?.startsWith("/") && !n.link.startsWith("//") && (
                   <Link href={n.link} className="underline">
                     View
                   </Link>

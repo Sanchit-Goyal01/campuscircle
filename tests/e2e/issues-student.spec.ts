@@ -25,6 +25,9 @@ async function signUp(page: Page) {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: new RegExp(name) })).toBeVisible();
+  const { data, error } = await adminClient().from("profiles").select("id").eq("full_name", name).single();
+  if (error) throw error;
+  return data.id as string;
 }
 
 async function report(page: Page, withPhoto = false) {
@@ -52,12 +55,12 @@ test("student reports a water problem with a photo and sees it routed to Hostel"
   await expect(page.getByRole("link", { name: /Water cooler not working/ })).toBeVisible();
 });
 
-test("second student's similar report merges and shows 2 reporters", async ({ page, browser }) => {
+test("second student's similar report merges and shows 2 reporters", async ({ page, browser, baseURL }) => {
   await signUp(page);
   await report(page);
   await slow(page.getByText("Report received. It has been sent to the Hostel team.")).toBeVisible();
 
-  const ctx = await browser.newContext({ baseURL: "http://localhost:3101" });
+  const ctx = await browser.newContext({ baseURL });
   const second = await ctx.newPage();
   await signUp(second);
   await report(second);
@@ -117,4 +120,42 @@ test("campus status page shows the issue under Hostel Block A", async ({ page })
   const group = page.getByRole("region", { name: "Hostel Block A" });
   await expect(group.getByText("Water cooler not working")).toBeVisible();
   await expect(group.getByText("high", { exact: true })).toBeVisible();
+});
+
+test("a failed submit keeps the typed text and shows the rate limit message", async ({ page }) => {
+  const id = await signUp(page);
+  const { error } = await adminClient()
+    .from("issue_report_log")
+    .insert(Array.from({ length: 5 }, () => ({ student_id: id })));
+  if (error) throw error;
+  await report(page);
+  await slow(page.getByText("You have filed 5 reports in the last 24 hours. Try again later.")).toBeVisible();
+  await expect(page.getByLabel("What is the problem?")).toHaveValue(REPORT);
+  await expect(page.getByLabel("Location")).not.toHaveValue("");
+});
+
+test("a student who did not report sees no vote buttons, and an unknown issue is 404", async ({ page, browser, baseURL }) => {
+  await signUp(page);
+  await report(page);
+  await slow(page.getByText("Report received.")).toBeVisible();
+  const admin = adminClient();
+  const { data: issue, error: issueError } = await admin.from("issues").select("id").eq("college_id", COLLEGE).single();
+  if (issueError) throw issueError;
+  const authority = await createUserWithRole(`auth${Date.now()}@demo-iot.edu`, "authority", { departmentName: "Hostel" });
+  for (const to of ["in_progress", "resolved_pending"]) {
+    const { error } = await authority.client.rpc("transition_issue", { p_issue: issue.id, p_to: to });
+    if (error) throw error;
+  }
+
+  const ctx = await browser.newContext({ baseURL });
+  const other = await ctx.newPage();
+  await signUp(other);
+  await other.goto(`/issues/${issue.id}`);
+  await expect(other.getByText("Waiting for your confirmation", { exact: true })).toBeVisible();
+  await expect(other.getByRole("button", { name: "Yes, it's fixed" })).toHaveCount(0);
+  // The 404 streams inside Suspense, so the HTTP status is already 200; check the rendered page.
+  await other.goto("/issues/00000000-0000-4000-8000-000000000000");
+  await expect(other.getByText("This page could not be found.")).toBeVisible();
+  await expect(other.getByRole("heading", { name: "Timeline" })).toHaveCount(0);
+  await ctx.close();
 });
