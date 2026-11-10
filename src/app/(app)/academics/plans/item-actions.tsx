@@ -17,28 +17,33 @@ export function ItemActions({
   toggle: (done: boolean) => Promise<ItemState>;
   miss: () => Promise<ItemState>;
 }) {
-  const [toggleState, toggleAction, togglePending] = useActionState<ItemState>(() => toggle(!done), {});
-  const [missState, missAction, missPending] = useActionState<ItemState>(() => miss(), {});
-  const error = toggleState.error ?? missState.error;
+  // One state for both buttons, so the latest result (success clears it) is all that shows.
+  const [state, formAction, pending] = useActionState<ItemState, FormData>(
+    (_prev, formData) => (formData.get("intent") === "miss" ? miss() : toggle(!done)),
+    {},
+  );
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <form action={toggleAction}>
-        <button type="submit" disabled={togglePending} className="underline" aria-label={`${done ? "Mark not done" : "Mark done"}: ${task}`}>
-          {done ? "Undo" : "Done"}
-        </button>
-      </form>
+    <form action={formAction} className="flex flex-wrap items-center gap-3">
+      <button
+        type="submit"
+        name="intent"
+        value="toggle"
+        disabled={pending}
+        className="underline"
+        aria-label={`${done ? "Mark not done" : "Mark done"}: ${task}`}
+      >
+        {done ? "Undo" : "Done"}
+      </button>
       {canMiss && !done && (
-        <form action={missAction}>
-          <button type="submit" disabled={missPending} className="underline" aria-label={`Mark missed: ${task}`}>
-            Missed
-          </button>
-        </form>
+        <button type="submit" name="intent" value="miss" disabled={pending} className="underline" aria-label={`Mark missed: ${task}`}>
+          Missed
+        </button>
       )}
-      {error && (
+      {state.error && (
         <p role="alert" className="text-sm">
-          {error}
+          {state.error}
         </p>
       )}
-    </div>
+    </form>
   );
 }

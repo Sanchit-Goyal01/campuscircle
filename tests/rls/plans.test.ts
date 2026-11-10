@@ -76,6 +76,31 @@ describe("mark_item_missed", () => {
     expect(await dueOf(p.planId)).toMatchObject({ T0: p.date(-1), T1: p.date(1) });
   });
 
+  test("marking the same item twice leaves all dates unchanged after the second call", async () => {
+    const p = await seedPlan(a, [-1, 0, 1, 3]);
+    expect((await miss(a, p.ids[0])).error).toBeNull();
+    const afterFirst = await dueOf(p.planId);
+    const second = await miss(a, p.ids[0]);
+    expect(second.error).toBeNull();
+    expect(second.data).toEqual([]);
+    expect(await dueOf(p.planId)).toEqual(afterFirst);
+  });
+
+  test("a future item cannot be marked missed", async () => {
+    const p = await seedPlan(a, [2, 4]);
+    const { data, error } = await miss(a, p.ids[0]);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+    expect(await dueOf(p.planId)).toMatchObject({ T0: p.date(2), T1: p.date(4) });
+  });
+
+  test("an item due exactly today is rescheduled to tomorrow", async () => {
+    const p = await seedPlan(a, [0, 1]);
+    const { error } = await miss(a, p.ids[0]);
+    expect(error).toBeNull();
+    expect(await dueOf(p.planId)).toMatchObject({ T0: p.date(1), T1: p.date(2) });
+  });
+
   test("unknown item returns no rows and anon is refused", async () => {
     const { data, error } = await miss(a, crypto.randomUUID());
     expect(error).toBeNull();
