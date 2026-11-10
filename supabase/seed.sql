@@ -20,3 +20,18 @@ insert into public.subjects (college_id, code, name, credits) values
   ('00000000-0000-0000-0000-00000000a001', 'CS201', 'Data Structures', 4),
   ('00000000-0000-0000-0000-00000000a001', 'CS202', 'Discrete Mathematics', 3)
 on conflict do nothing;
+
+insert into public.departments (college_id, name) values
+  ('00000000-0000-0000-0000-00000000a001', 'Hostel'),
+  ('00000000-0000-0000-0000-00000000a001', 'Maintenance'),
+  ('00000000-0000-0000-0000-00000000a001', 'IT Services');
+
+insert into public.locations (college_id, name) values
+  ('00000000-0000-0000-0000-00000000a001', 'Hostel Block A'),
+  ('00000000-0000-0000-0000-00000000a001', 'Hostel Block B'),
+  ('00000000-0000-0000-0000-00000000a001', 'Library'),
+  ('00000000-0000-0000-0000-00000000a001', 'Main Building'),
+  ('00000000-0000-0000-0000-00000000a001', 'Cafeteria'),
+  ('00000000-0000-0000-0000-00000000a001', 'Sports Complex'),
+  ('00000000-0000-0000-0000-00000000b001', 'Arts Block')
+on conflict do nothing;
