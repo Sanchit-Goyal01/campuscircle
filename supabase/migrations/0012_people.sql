@@ -4,7 +4,8 @@
 alter table public.profiles add column is_mentor boolean not null default false;
 grant update (is_mentor) on public.profiles to authenticated;
 
--- Skills: at most 20 items, each 1-40 characters, none null.
+-- Skills: at most 20 items, each 1-40 characters, none null, blank or repeated
+-- (case-insensitive).
 create function public.skills_valid(p_skills text[])
 returns boolean
 language sql
@@ -14,8 +15,10 @@ as $$
     and coalesce(cardinality(p_skills), 0) <= 20
     and not exists (
       select 1 from unnest(p_skills) s
-      where s is null or char_length(s) not between 1 and 40
+      where s is null or btrim(s) = '' or char_length(s) not between 1 and 40
     )
+    and cardinality(array(select distinct lower(x) from unnest(p_skills) x))
+        = coalesce(cardinality(p_skills), 0)
 $$;
 
 alter table public.profiles
@@ -68,6 +71,8 @@ begin
      or coalesce(v_role = 'student', false) is not true then
     raise exception 'insufficient_privilege' using errcode = '42501';
   end if;
+  -- One student's requests are counted one at a time, so the cap cannot be raced.
+  perform pg_advisory_xact_lock(hashtextextended('mentorship:' || v_uid::text, 0));
   if p_mentor_id is null or p_mentor_id = v_uid
      or not exists (select 1 from public.profiles m
                     where m.id = p_mentor_id and m.college_id = v_college and m.is_mentor
@@ -84,6 +89,12 @@ begin
              where r.student_id = v_uid and r.mentor_id = p_mentor_id
                and r.status = 'declined' and r.decided_at > now() - interval '7 days') then
     raise exception 'declined_recently' using errcode = 'P0001';
+  end if;
+
+  -- At most 5 open requests at a time.
+  if (select count(*) from public.mentorship_requests r
+      where r.student_id = v_uid and r.status = 'pending') >= 5 then
+    raise exception 'too_many_pending' using errcode = 'P0001';
   end if;
 
   -- The unique pending index raises 23505 on a second open request to the same mentor.

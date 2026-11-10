@@ -47,10 +47,12 @@ test("home shows registered events, mentorship and listings with empty states", 
   const stamp = Date.now();
   const soon = await mk(`Soon event ${stamp}`, 2 * day);
   const later = await mk(`Later event ${stamp}`, 4 * day);
-  const unreg = await mk(`Unregistered event ${stamp}`, 3 * day);
+  await mk(`Unregistered event ${stamp}`, 3 * day);
   const past = await mk(`Past event ${stamp}`, -2 * day);
+  // Started an hour ago and still running: it counts as upcoming.
+  const running = await mk(`Running event ${stamp}`, -1_800_000);
   const { error: regErr } = await admin.from("event_registrations").insert(
-    [soon, later, past].map((event_id) => ({ event_id, student_id: me.id, college_id: me.collegeId })),
+    [soon, later, past, running].map((event_id) => ({ event_id, student_id: me.id, college_id: me.collegeId })),
   );
   if (regErr) throw regErr;
 
@@ -65,10 +67,25 @@ test("home shows registered events, mentorship and listings with empty states", 
     .insert({ college_id: me.collegeId, seller_id: me.id, title: `Sold lamp ${stamp}`, price_inr: 100, condition: "good", status: "sold" });
   if (sErr) throw sErr;
 
-  const { data: mentor } = await admin.from("profiles").select("id").eq("full_name", "Priya Sharma").eq("college_id", me.collegeId).single();
+  // A fresh mentor, so the test leaves no pending requests with a seeded person.
+  const { data: made, error: uErr } = await admin.auth.admin.createUser({
+    email: `mentor${stamp}@demo-iot.edu`,
+    password: PASSWORD,
+    email_confirm: true,
+    user_metadata: { full_name: `Mentor ${stamp}` },
+  });
+  if (uErr) throw uErr;
+  const mentorId = made.user!.id;
+  const row = (over: Record<string, unknown>) => ({
+    college_id: me.collegeId, student_id: me.id, mentor_id: mentorId, subject: "DBMS", message: "Please help me with joins.", status: "pending", decided_at: null, ...over,
+  });
   const { error: mErr } = await admin.from("mentorship_requests").insert([
-    { college_id: me.collegeId, student_id: me.id, mentor_id: mentor!.id, subject: "DBMS", message: "Please help me with joins." },
-    { college_id: me.collegeId, student_id: mentor!.id, mentor_id: me.id, subject: "Rust", message: "Can you teach me Rust basics?" },
+    row({}),
+    row({ student_id: mentorId, mentor_id: me.id, subject: "Rust", message: "Can you teach me Rust basics?" }),
+    // Decided requests are not pending, so the home counts leave them out.
+    row({ subject: "SQL", status: "accepted", decided_at: new Date().toISOString() }),
+    row({ subject: "OS", status: "declined", decided_at: new Date().toISOString() }),
+    row({ student_id: mentorId, mentor_id: me.id, subject: "Go", message: "Could you explain goroutines?", status: "accepted", decided_at: new Date().toISOString() }),
   ]);
   if (mErr) throw mErr;
 
@@ -78,11 +95,12 @@ test("home shows registered events, mentorship and listings with empty states", 
   await expect(home.getByRole("link", { name: "List an item" })).toHaveCount(0);
 
   const events = home.getByRole("link", { name: new RegExp(`event ${stamp}`) });
-  await expect(events).toHaveCount(2); // soonest first; past and unregistered excluded
-  await expect(events.nth(0)).toHaveText(`Soon event ${stamp}`);
-  await expect(events.nth(0)).toHaveAttribute("href", `/events/${soon}`);
-  await expect(events.nth(1)).toHaveAttribute("href", `/events/${later}`);
-  expect(unreg && past).toBeTruthy();
+  await expect(events).toHaveCount(3); // soonest first; finished and unregistered excluded
+  await expect(events.nth(0)).toHaveText(`Running event ${stamp}`);
+  await expect(events.nth(1)).toHaveText(`Soon event ${stamp}`);
+  await expect(events.nth(1)).toHaveAttribute("href", `/events/${soon}`);
+  await expect(events.nth(2)).toHaveAttribute("href", `/events/${later}`);
+  await expect(home.getByRole("link", { name: new RegExp(`(Unregistered|Past) event ${stamp}`) })).toHaveCount(0);
 
   await expect(home.getByText("1 incoming, 1 outgoing")).toBeVisible();
   await expect(home.getByText("2 pending requests")).toBeVisible();

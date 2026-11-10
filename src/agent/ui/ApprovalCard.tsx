@@ -5,6 +5,8 @@ import { humanizeToolName, type PendingAction } from './types';
 
 const TOOL_LABELS: Record<string, string> = {
   create_study_plan: 'Save a study plan',
+  request_mentorship: 'Ask a mentor for help',
+  register_for_event: 'Register for an event',
 };
 
 type Plan = { title: string; items: { due_on: string; task: string }[] };
@@ -104,6 +106,22 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
               </li>
             ))}
           </ul>
+        </>
+      ) : action.display?.kind === 'mentorship' ? (
+        <>
+          <p className="slip-title">{action.display.mentor ?? 'A mentor we could not find'}</p>
+          <p className="slip-note">Subject: {action.display.subject}</p>
+          <p>{action.display.message}</p>
+        </>
+      ) : action.display?.kind === 'event' ? (
+        <>
+          <p className="slip-title">{action.display.title ?? 'An event we could not find'}</p>
+          {action.display.when && (
+            <p className="slip-note">
+              {action.display.when}
+              {action.display.venue ? ` · ${action.display.venue}` : ''}
+            </p>
+          )}
         </>
       ) : (
         <pre className="slip-json">{JSON.stringify(action.input, null, 2)}</pre>

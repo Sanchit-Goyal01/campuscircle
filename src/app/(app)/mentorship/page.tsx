@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
-import { formatWhen } from "../issues/labels";
+import { formatWhen } from "@/modules/events/queries";
 import { DecideButtons } from "./decide-buttons";
 
 type Req = {

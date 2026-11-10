@@ -56,8 +56,11 @@ describe("people and mentorship", { timeout: 60_000 }, () => {
     expect((await student.client.from("profiles").update({ skills: many }).eq("id", student.id)).error?.code).toBe("23514");
     expect((await student.client.from("profiles").update({ skills: ["x".repeat(41)] }).eq("id", student.id)).error?.code).toBe("23514");
     expect((await student.client.from("profiles").update({ skills: [""] }).eq("id", student.id)).error?.code).toBe("23514");
+    expect((await student.client.from("profiles").update({ skills: ["   "] }).eq("id", student.id)).error?.code).toBe("23514");
+    expect((await student.client.from("profiles").update({ skills: ["SQL", "sql"] }).eq("id", student.id)).error?.code).toBe("23514");
+    expect((await student.client.from("profiles").update({ skills: ["Rust", "Go", "rust"] }).eq("id", student.id)).error?.code).toBe("23514");
     expect((await student.client.from("profiles").update({ bio: "b".repeat(501) }).eq("id", student.id)).error?.code).toBe("23514");
-    const ok = await student.client.from("profiles").update({ skills: Array.from({ length: 20 }, () => "x".repeat(40)) }).eq("id", student.id);
+    const ok = await student.client.from("profiles").update({ skills: Array.from({ length: 20 }, (_, i) => String(i).padStart(2, "0").repeat(20)) }).eq("id", student.id);
     expect(ok.error).toBeNull();
     await student.client.from("profiles").update({ skills: [] }).eq("id", student.id);
   });
@@ -186,5 +189,55 @@ describe("people and mentorship", { timeout: 60_000 }, () => {
     const me = await createStudent(`me-${run}@pc-${run}.edu`);
     const out = (await tool("find_teammates").run({ skills: ["rust"] }, ctxFor(me, college))) as any[];
     expect(out.map((o) => o.name)).toEqual(["zzlate"]);
+  });
+
+  test("a student cannot update or delete a mentorship request directly", async () => {
+    const S4 = await createStudent(`s4-${run}@pa-${run}.edu`);
+    const r = await S4.client.rpc("request_mentorship", { p_mentor_id: mentor.id, p_subject: "SQL", p_message: MSG });
+    expect(r.error).toBeNull();
+    const upd = await S4.client.from("mentorship_requests").update({ status: "accepted" }).eq("id", r.data).select("id");
+    expect(upd.error?.code === "42501" || (upd.data ?? []).length === 0).toBe(true);
+    const del = await S4.client.from("mentorship_requests").delete().eq("id", r.data).select("id");
+    expect(del.error?.code === "42501" || (del.data ?? []).length === 0).toBe(true);
+    const { data } = await adminClient().from("mentorship_requests").select("status").eq("id", r.data).single();
+    expect(data?.status).toBe("pending");
+  });
+
+  test("a sixth pending request is refused with too_many_pending, in the RPC and the tool", async () => {
+    const S5 = await createStudent(`s5-${run}@pa-${run}.edu`);
+    const mentors: S[] = [];
+    for (let i = 0; i < 6; i++) {
+      const m = await createStudent(`cap${i}-${run}@pa-${run}.edu`);
+      await m.client.from("profiles").update({ is_mentor: true, skills: ["DBMS"] }).eq("id", m.id);
+      mentors.push(m);
+    }
+    const ask = (m: S) => S5.client.rpc("request_mentorship", { p_mentor_id: m.id, p_subject: "DBMS", p_message: MSG });
+    for (const m of mentors.slice(0, 5)) expect((await ask(m)).error).toBeNull();
+    const sixth = await ask(mentors[5]);
+    expect(sixth.error?.code).toBe("P0001");
+    expect(sixth.error?.message).toContain("too_many_pending");
+    await expect(
+      tool("request_mentorship").run({ mentor_id: mentors[5].id, subject: "DBMS", message: MSG }, ctxFor(S5, collegeA)),
+    ).rejects.toThrow("5 requests waiting");
+    // Deciding one frees a slot.
+    const { data: first } = await adminClient().from("mentorship_requests").select("id").eq("student_id", S5.id).eq("mentor_id", mentors[0].id).single();
+    expect((await mentors[0].client.rpc("decide_mentorship", { p_request_id: first!.id, p_accept: true })).error).toBeNull();
+    expect((await ask(mentors[5])).error).toBeNull();
+  });
+
+  test("the approval card names the mentor and the message, with no id", async () => {
+    const { describeAction } = await import("../../src/agent/display");
+    const d = await describeAction(student.client, {
+      tool_name: "request_mentorship",
+      input: { mentor_id: mentor.id, subject: "DBMS", message: MSG },
+    });
+    expect(d).toEqual({ kind: "mentorship", mentor: `m-${run}`, subject: "DBMS", message: MSG });
+    expect(JSON.stringify(d)).not.toContain(mentor.id);
+    // A mentor in another college, or a made-up id, shows as unknown instead of leaking a name.
+    const other = await describeAction(student.client, { tool_name: "request_mentorship", input: { mentor_id: mentorB.id, subject: "DBMS", message: MSG } });
+    expect(other).toMatchObject({ kind: "mentorship", mentor: null });
+    const junk = await describeAction(student.client, { tool_name: "request_mentorship", input: { mentor_id: "x", subject: "a", message: "b" } });
+    expect(junk).toMatchObject({ mentor: null });
+    expect(await describeAction(student.client, { tool_name: "get_marks", input: {} })).toBeNull();
   });
 });

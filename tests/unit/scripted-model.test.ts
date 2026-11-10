@@ -216,10 +216,23 @@ describe("scripted model", () => {
     });
 
     test("demo script skips the mentor request when no mentor was found", async () => {
+      const saved = outputs.find_mentor;
       outputs.find_mentor = "<tool_data>[]</tool_data>";
-      const { calls } = await run(DEMO);
-      expect(calls.map((c) => c.name)).not.toContain("request_mentorship");
-      outputs.find_mentor = `<tool_data>${JSON.stringify([{ mentor_id: MENTOR }])}</tool_data>`;
+      try {
+        const { calls, text } = await run(DEMO);
+        expect(calls.map((c) => c.name)).not.toContain("request_mentorship");
+        expect(text).toBe(
+          "I found your weak subjects, papers, notes and a used textbook. Approve the study plan to go ahead.",
+        );
+        expect(text).not.toMatch(/mentor/i);
+      } finally {
+        outputs.find_mentor = saved;
+      }
+    });
+
+    test("trigger phrases are word-bounded", async () => {
+      expect((await next([user("I am swweak in DBMS and my exam is in 10 days")])).toolCalls[0].name).not.toBe("get_marks");
+      expect((await next([user("weak in DBMS, texam in 10 days")])).toolCalls[0].name).not.toBe("get_marks");
     });
 
     test("needs both phrases", async () => {

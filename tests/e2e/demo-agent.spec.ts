@@ -70,7 +70,13 @@ test("demo: weak in DBMS, exam in 10 days -> tools, two approvals, plan and ment
   const slips = page.getByRole("region", { name: /Approval request/ });
   await expect(slips).toHaveCount(2);
   const plan = slips.filter({ hasText: "DBMS exam revision plan" });
-  const mentor = slips.filter({ hasText: "Priya Sharma" }).or(slips.filter({ hasText: "I am weak in DBMS" }));
+  const mentor = slips.filter({ hasText: "Priya Sharma" });
+  await expect(mentor).toHaveCount(1);
+  await expect(mentor.getByRole("heading", { name: "Ask a mentor for help" })).toBeVisible();
+  await expect(mentor).toContainText("I am weak in DBMS and my exam is in 10 days. Could you help me revise?");
+  // The card names the mentor; it never shows a raw id.
+  await expect(mentor).not.toContainText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  await expect(mentor).not.toContainText("mentor_id");
   await plan.getByRole("button", { name: "Approve" }).click();
   await expect(plan.getByText("Saved", { exact: true })).toBeVisible({ timeout: 30_000 });
   await mentor.getByRole("button", { name: "Approve" }).click();

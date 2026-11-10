@@ -34,14 +34,16 @@ export const todayLocal = () => localDate(new Date(), TZ);
  */
 export async function listEvents(
   db: SupabaseClient,
-  opts: { query?: string; fromIso: string; toIso?: string; limit?: number },
+  opts: { query?: string; fromIso?: string; toIso?: string; endsAfterIso?: string; limit?: number },
 ): Promise<EventRow[]> {
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), MAX_LIMIT);
   const query = (opts.query ?? '').trim().slice(0, MAX_QUERY).trim();
   let q = db
     .from('events')
-    .select('id, title, venue, starts_at, ends_at, capacity')
-    .gte('starts_at', opts.fromIso);
+    .select('id, title, venue, starts_at, ends_at, capacity');
+  if (opts.fromIso) q = q.gte('starts_at', opts.fromIso);
+  // "Upcoming": not over yet, so an event in progress still counts.
+  if (opts.endsAfterIso) q = q.gt('ends_at', opts.endsAfterIso);
   if (opts.toIso) q = q.lt('starts_at', opts.toIso);
   if (query) q = q.textSearch('search', query, { type: 'websearch', config: 'simple' });
   const { data, error } = await q.order('starts_at', { ascending: true }).limit(limit);
@@ -60,29 +62,25 @@ export const formatWhen = (iso: string) =>
   fmt({ weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 
 /**
- * Events the student registered for that start now or later, soonest first.
- * Registration rows are visible only to their owner (RLS); events to the college.
+ * Events the student registered for that are not over yet (ends_at is in the
+ * future; every event has an end), soonest first. Registration rows are visible
+ * only to their owner (RLS); events to the college.
  */
 export async function upcomingRegisteredEvents(
   db: SupabaseClient,
   studentId: string,
   limit = 3,
 ): Promise<Pick<EventRow, 'id' | 'title' | 'venue' | 'starts_at'>[]> {
-  const { data: regs, error: rErr } = await db
-    .from('event_registrations')
-    .select('event_id')
-    .eq('student_id', studentId)
-    .limit(1000);
-  if (rErr) throw new Error(`Could not load registrations: ${rErr.message}`);
-  const ids = (regs ?? []).map((r) => r.event_id as string);
-  if (ids.length === 0) return [];
   const { data, error } = await db
     .from('events')
-    .select('id, title, venue, starts_at')
-    .in('id', ids)
-    .gte('starts_at', new Date().toISOString())
+    .select('id, title, venue, starts_at, event_registrations!inner(student_id)')
+    .eq('event_registrations.student_id', studentId)
+    .gt('ends_at', new Date().toISOString())
     .order('starts_at', { ascending: true })
     .limit(Math.min(Math.max(Math.trunc(limit), 1), MAX_LIMIT));
   if (error) throw new Error(`Could not load events: ${error.message}`);
-  return (data ?? []) as Pick<EventRow, 'id' | 'title' | 'venue' | 'starts_at'>[];
+  return (data ?? []).map(({ id, title, venue, starts_at }) => ({ id, title, venue, starts_at })) as Pick<
+    EventRow,
+    'id' | 'title' | 'venue' | 'starts_at'
+  >[];
 }

@@ -1,4 +1,5 @@
 import { errorResponse, signedOut, toClientSteps, unexpected } from '@/agent/api';
+import { describeAction } from '@/agent/display';
 import { DailyLimitError, assertWithinDailyLimit } from '@/agent/limits';
 import { runAgent } from '@/agent/loop';
 import { getModelClient } from '@/agent/model';
@@ -36,7 +37,10 @@ async function readRun(ctx: ToolContext, runId: string) {
   ]);
   if (steps.error) throw new Error(`Could not read steps: ${steps.error.message}`);
   if (actions.error) throw new Error(`Could not read pending actions: ${actions.error.message}`);
-  return { steps: toClientSteps(steps.data), pendingActions: actions.data };
+  const pendingActions = await Promise.all(
+    actions.data.map(async (a) => ({ ...a, display: await describeAction(ctx.db, a) })),
+  );
+  return { steps: toClientSteps(steps.data), pendingActions };
 }
 
 export async function POST(request: Request) {

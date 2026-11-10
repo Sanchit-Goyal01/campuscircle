@@ -1,3 +1,5 @@
+import type { ActionDisplay } from '../display';
+
 export type TraceStep = {
   seq: number;
   kind: 'tool_call' | 'tool_result' | 'approval_requested' | 'error';
@@ -10,6 +12,8 @@ export type PendingAction = {
   tool_name: string;
   input: unknown;
   status: string;
+  /** Plain-language details resolved on the server; null for tools with no special card. */
+  display?: ActionDisplay | null;
 };
 
 /** Shown in place of the raw name of a tool, which still appears in the trace. */

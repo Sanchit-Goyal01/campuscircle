@@ -43,7 +43,7 @@ async function Events({ searchParams }: { searchParams: Promise<SP> }) {
   );
 
   if (!calendar) {
-    const events = await listEvents(me.db, { fromIso: new Date().toISOString(), limit: 50 });
+    const events = await listEvents(me.db, { endsAfterIso: new Date().toISOString(), limit: 50 });
     return (
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {header}

@@ -59,3 +59,14 @@ export function monthGrid<E extends { starts_at: string }>(
   }
   return weeks;
 }
+
+const LOCAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/** A `datetime-local` value is campus time (Asia/Kolkata). Null when malformed or not a real date. */
+export function parseLocal(v: string): string | null {
+  if (!LOCAL.test(v)) return null;
+  const d = new Date(`${v}:00+05:30`);
+  // 2026-02-31 rolls forward in Date, so the local date must round-trip.
+  if (Number.isNaN(d.getTime()) || localDate(d) !== v.slice(0, 10)) return null;
+  return d.toISOString();
+}

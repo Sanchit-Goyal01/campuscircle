@@ -4,18 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { parseLocal } from "@/modules/events/calendar";
 
 export type EventState = { error?: string; ok?: boolean; message?: string };
 
 const GENERIC = "Something went wrong. Try again.";
-const LOCAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
-
-/** `datetime-local` values are campus time (Asia/Kolkata). */
-function parseLocal(v: string): string | null {
-  if (!LOCAL.test(v)) return null;
-  const d = new Date(`${v}:00+05:30`);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
 
 export async function createEvent(_prev: EventState, formData: FormData): Promise<EventState> {
   const title = String(formData.get("title") ?? "").trim();
@@ -27,7 +20,7 @@ export async function createEvent(_prev: EventState, formData: FormData): Promis
   if (title.length < 3 || title.length > 120) return { error: "Enter a title of 3 to 120 characters." };
   if (venue.length < 1 || venue.length > 120) return { error: "Enter a venue of up to 120 characters." };
   if (description.length > 4000) return { error: "The description can be at most 4000 characters." };
-  if (!starts || !ends) return { error: "Choose a start and end date and time." };
+  if (!starts || !ends) return { error: "Enter real start and end dates and times." };
   if (Date.parse(ends) <= Date.parse(starts)) return { error: "The event must end after it starts." };
   let capacity: number | null = null;
   if (capacityRaw) {

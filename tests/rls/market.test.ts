@@ -72,6 +72,10 @@ describe("marketplace", { timeout: 60_000 }, () => {
     expect((await bad(`${collegeB}/${seller.id}/x.jpg`)).error?.code).toBe("23514");
     expect((await bad("x.jpg")).error?.code).toBe("23514");
     expect((await seller.client.from("listings").update({ photo_path: `${collegeA}/${other.id}/x.jpg` }).eq("id", listingId)).error?.code).toBe("23514");
+    // One filename segment only: no slashes, no dot segments.
+    for (const tail of ["../x.jpg", "a/b.jpg", "a/../b.jpg", "/x.jpg", "..", ".hidden.jpg", ""]) {
+      expect((await bad(`${collegeA}/${seller.id}/${tail}`)).error?.code).toBe("23514");
+    }
     // Storage: nobody uploads into another seller's folder or another college's.
     const body = await jpeg();
     const up = (s: S, path: string) => s.client.storage.from("listing-photos").upload(path, body, { contentType: "image/jpeg" });
@@ -80,6 +84,10 @@ describe("marketplace", { timeout: 60_000 }, () => {
     const good = `${collegeA}/${seller.id}/${crypto.randomUUID()}.jpg`;
     expect((await up(seller, good)).error).toBeNull();
     expect((await seller.client.from("listings").update({ photo_path: good }).eq("id", listingId)).error).toBeNull();
+    // Nobody overwrites an existing photo: not another student, and not the seller (no update policy).
+    const over = (s: S) => s.client.storage.from("listing-photos").upload(good, body, { contentType: "image/jpeg", upsert: true });
+    expect((await over(other)).error).not.toBeNull();
+    expect((await over(seller)).error).not.toBeNull();
     // Same-college students see it; college B cannot.
     expect((await buyer.client.storage.from("listing-photos").createSignedUrl(good, 60)).error).toBeNull();
     expect((await studentB.client.storage.from("listing-photos").createSignedUrl(good, 60)).error).not.toBeNull();

@@ -46,6 +46,8 @@ const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string 
 
 const DEMO_FINAL =
   'I found your weak subjects, papers, notes, a mentor and a used textbook. Approve the study plan and the mentor request to go ahead.';
+const DEMO_FINAL_NO_MENTOR =
+  'I found your weak subjects, papers, notes and a used textbook. Approve the study plan to go ahead.';
 const DEMO_READS: [string, unknown][] = [
   ['get_marks', {}],
   ['get_weak_subjects', {}],
@@ -88,7 +90,7 @@ function demoTurn(messages: AgentMessage[], now: Date): ModelTurn {
       });
     }
   }
-  return say(DEMO_FINAL);
+  return say(called.has('request_mentorship') ? DEMO_FINAL : DEMO_FINAL_NO_MENTOR);
 }
 
 /**
@@ -143,7 +145,7 @@ export function createScriptedModel(now: () => Date = () => new Date()): ModelCl
 
       // The demo script runs before every keyword rule below.
       // Matches "exam in" and "exam is in", so the natural demo sentence works.
-      if (message.includes('weak in') && /exam (is )?in/.test(message)) return demoTurn(messages, now());
+      if (/\bweak in\b/.test(message) && /\bexam (is )?in\b/.test(message)) return demoTurn(messages, now());
 
       // Tool results are in, so finish: returning another tool call would spin the loop.
       const read = READ_TOOLS.find((r) => message.includes(r.keyword));

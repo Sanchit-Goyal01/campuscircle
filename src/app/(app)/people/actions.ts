@@ -6,6 +6,7 @@ import { UUID } from "@/modules/academics/http";
 
 export type RequestState = { error?: string; ok?: boolean };
 
+const TOO_MANY = "You have 5 requests waiting for a reply. Wait for an answer before asking someone else.";
 const GENERIC = "Could not send your request. Try again.";
 
 export async function requestMentorship(_prev: RequestState, formData: FormData): Promise<RequestState> {
@@ -24,6 +25,7 @@ export async function requestMentorship(_prev: RequestState, formData: FormData)
   });
   if (error) {
     if (error.message.includes("declined_recently")) return { error: "This mentor declined recently. Try again later." };
+    if (error.message.includes("too_many_pending")) return { error: TOO_MANY };
     if (error.code === "23505") return { error: "You already have a pending request to this mentor." };
     if (error.code === "42501") return { error: "You can't request mentorship from this person." };
     if (error.code === "23514") return { error: "Check the subject and message length." };

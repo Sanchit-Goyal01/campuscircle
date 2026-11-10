@@ -77,6 +77,38 @@ describe("events", { timeout: 60_000 }, () => {
     expect(del.data).toHaveLength(1);
   });
 
+  test("a society admin changes only their own events; a college admin changes any in the college", async () => {
+    const mine = await society.client.from("events").insert(newEvent({ title: "Society own" })).select("id").single();
+    const theirs = await admin.client.from("events").insert(newEvent({ title: "Admin own" })).select("id").single();
+    const society2 = await createUserWithRole(`rival-${run}@ea-${run}.edu`, "society_admin");
+    // Another society admin cannot touch either.
+    for (const id of [mine.data!.id, theirs.data!.id]) {
+      const upd = await society2.client.from("events").update({ title: "Taken over" }).eq("id", id).select("id");
+      expect(upd.data ?? []).toEqual([]);
+      const del = await society2.client.from("events").delete().eq("id", id).select("id");
+      expect(del.data ?? []).toEqual([]);
+    }
+    // A society admin cannot touch the college admin's event, but can edit their own.
+    expect((await society.client.from("events").update({ title: "Nope" }).eq("id", theirs.data!.id).select("id")).data ?? []).toEqual([]);
+    expect((await society.client.from("events").delete().eq("id", theirs.data!.id).select("id")).data ?? []).toEqual([]);
+    expect((await society.client.from("events").update({ title: "Society edit" }).eq("id", mine.data!.id).select("title")).data).toEqual([{ title: "Society edit" }]);
+    // The college admin can edit and delete the society admin's event.
+    expect((await admin.client.from("events").update({ title: "Admin edit" }).eq("id", mine.data!.id).select("title")).data).toEqual([{ title: "Admin edit" }]);
+    expect((await admin.client.from("events").delete().eq("id", mine.data!.id).select("id")).data).toHaveLength(1);
+    const left = await adminClient().from("events").select("title").eq("id", theirs.data!.id).single();
+    expect(left.data?.title).toBe("Admin own");
+  });
+
+  test("a college B admin cannot update or delete a college A event", async () => {
+    const adminB = await createUserWithRole(`xadb-${run}@eb-${run}.edu`, "college_admin");
+    const upd = await adminB.client.from("events").update({ title: "Cross" }).eq("id", eventId).select("id");
+    expect(upd.data ?? []).toEqual([]);
+    const del = await adminB.client.from("events").delete().eq("id", eventId).select("id");
+    expect(del.data ?? []).toEqual([]);
+    const { data } = await adminClient().from("events").select("title").eq("id", eventId).single();
+    expect(data?.title).toBe(`Workshop ${run}`);
+  });
+
   test("register twice returns already_registered", async () => {
     const first = await student.client.rpc("register_for_event", { p_event_id: eventId });
     expect(first.error).toBeNull();
@@ -165,6 +197,53 @@ describe("events", { timeout: 60_000 }, () => {
     }
     const none = (await tool("search_events").run({ from: "2020-01-01", to: "2020-01-31" }, ctxFor(student, collegeA))) as unknown[];
     expect(none).toEqual([]);
+  });
+
+  test("search_events never returns past events, even for an old from date", async () => {
+    const past = await adminClient()
+      .from("events")
+      .insert({ college_id: collegeA, created_by: admin.id, title: `Bygone ${run}`, venue: "Hall", starts_at: inDays(-3), ends_at: inDays(-2.9) })
+      .select("id")
+      .single();
+    expect(past.error).toBeNull();
+    const out = (await tool("search_events").run({ query: `Bygone ${run}`, from: "2020-01-01", to: "2099-01-01" }, ctxFor(student, collegeA))) as any[];
+    expect(out).toEqual([]);
+  });
+
+  test("an event in progress is upcoming; a finished one is not", async () => {
+    const { listEvents, upcomingRegisteredEvents } = await import("../../src/modules/events/queries");
+    const make = async (title: string, starts: number, ends: number) => {
+      const r = await adminClient().from("events").insert({ college_id: collegeA, created_by: admin.id, title, venue: "Hall", starts_at: inDays(starts), ends_at: inDays(ends) }).select("id").single();
+      expect(r.error).toBeNull();
+      return r.data!.id as string;
+    };
+    const now = await make(`Now ${run}`, -0.01, 0.2);
+    const over = await make(`Over ${run}`, -0.5, -0.1);
+    for (const id of [now, over]) {
+      await adminClient().from("event_registrations").insert({ event_id: id, student_id: other.id, college_id: collegeA });
+    }
+    const list = await listEvents(other.client, { endsAfterIso: new Date().toISOString(), query: run });
+    const titles = list.map((e) => e.title);
+    expect(titles).toContain(`Now ${run}`);
+    expect(titles).not.toContain(`Over ${run}`);
+    const mine = (await upcomingRegisteredEvents(other.client, other.id, 20)).map((e) => e.id);
+    expect(mine).toContain(now);
+    expect(mine).not.toContain(over);
+  });
+
+  test("the approval card names the event, time in IST and venue, with no id", async () => {
+    const { describeAction } = await import("../../src/agent/display");
+    const d = await describeAction(student.client, { tool_name: "register_for_event", input: { event_id: eventId } });
+    expect(d).toMatchObject({ kind: "event", title: `Workshop ${run}`, venue: "Seminar Hall" });
+    expect((d as any).when).toMatch(/IST$/);
+    expect(JSON.stringify(d)).not.toContain(eventId);
+    const none = await describeAction(studentB.client, { tool_name: "register_for_event", input: { event_id: eventId } });
+    expect(none).toEqual({ kind: "event", title: null, when: null, venue: null });
+  });
+
+  test("register_for_event tool accepts a seed-style id (not an RFC v4 uuid)", async () => {
+    const out = await executeToolCall({ name: "register_for_event", input: { event_id: "00000000-0000-0000-0000-0000000000e1" } }, allTools, ctxFor(student, collegeA), (await student.client.from("agent_runs").insert({ student_id: student.id, college_id: collegeA, message: "hi" }).select("id").single()).data!.id);
+    expect(out.status).toBe("pending_approval");
   });
 
   test("register_for_event tool runs only after approval", async () => {

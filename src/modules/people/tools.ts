@@ -97,6 +97,9 @@ export const requestMentorship: AgentTool<z.infer<typeof requestInput>> = {
     if (error) {
       if (error.code === '42501') throw new Error(NOT_ALLOWED);
       if (error.message.includes('declined_recently')) throw new Error(DECLINED);
+      if (error.message.includes('too_many_pending')) {
+        throw new Error('You have 5 requests waiting for a reply. Wait for an answer before asking someone else.');
+      }
       if (error.code === '23505') throw new Error('You already have a pending request to this mentor.');
       throw new Error('Could not send the mentorship request.');
     }

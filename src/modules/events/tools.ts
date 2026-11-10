@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AgentTool } from '../../agent/types';
+import { UUID } from '../academics/http';
 import { addDays, dayStart, listEvents, registrationCount, todayLocal } from './queries';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.');
@@ -18,8 +19,10 @@ export const searchEvents: AgentTool<z.infer<typeof searchInput>> = {
   input: searchInput,
   async run({ query, from, to }, ctx) {
     const fromDay = from ?? todayLocal();
-    const fromIso = dayStart(fromDay);
-    if (!fromIso) throw new Error('The from date is not a valid date.');
+    const fromStart = dayStart(fromDay);
+    if (!fromStart) throw new Error('The from date is not a valid date.');
+    // Past events are never returned, whatever `from` says.
+    const fromIso = new Date(Math.max(Date.parse(fromStart), Date.now())).toISOString();
     if (to && !dayStart(to)) throw new Error('The to date is not a valid date.');
     const toDay = to ?? addDays(fromDay, 30);
     const toIso = dayStart(addDays(toDay, to ? 1 : 0));
@@ -37,7 +40,7 @@ export const searchEvents: AgentTool<z.infer<typeof searchInput>> = {
   },
 };
 
-const registerInput = z.strictObject({ event_id: z.string().uuid() });
+const registerInput = z.strictObject({ event_id: z.string().regex(UUID) });
 
 export const registerForEvent: AgentTool<z.infer<typeof registerInput>> = {
   name: 'register_for_event',

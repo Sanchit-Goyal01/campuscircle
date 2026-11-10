@@ -43,22 +43,33 @@ create policy events_insert on public.events
     and coalesce((select public.app_role_of_user()) in ('college_admin', 'society_admin'), false)
   );
 
+-- A college admin manages every event in the college; a society admin only
+-- the events they created.
 create policy events_update on public.events
   for update to authenticated
   using (
     college_id = public.current_college_id()
-    and coalesce((select public.app_role_of_user()) in ('college_admin', 'society_admin'), false)
+    and coalesce(
+      (select public.app_role_of_user()) = 'college_admin'
+      or ((select public.app_role_of_user()) = 'society_admin' and created_by = auth.uid()),
+      false)
   )
   with check (
     college_id = public.current_college_id()
-    and coalesce((select public.app_role_of_user()) in ('college_admin', 'society_admin'), false)
+    and coalesce(
+      (select public.app_role_of_user()) = 'college_admin'
+      or ((select public.app_role_of_user()) = 'society_admin' and created_by = auth.uid()),
+      false)
   );
 
 create policy events_delete on public.events
   for delete to authenticated
   using (
     college_id = public.current_college_id()
-    and coalesce((select public.app_role_of_user()) in ('college_admin', 'society_admin'), false)
+    and coalesce(
+      (select public.app_role_of_user()) = 'college_admin'
+      or ((select public.app_role_of_user()) = 'society_admin' and created_by = auth.uid()),
+      false)
   );
 
 create table public.event_registrations (

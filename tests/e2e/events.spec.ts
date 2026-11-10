@@ -73,3 +73,17 @@ test("admin creates an event, student sees it in the calendar and registers, sea
   await expect(sp.getByText("1 of 5 seats taken")).toBeVisible();
   await ctx.close();
 });
+
+test("the new event form explains missing or impossible dates", async ({ page }) => {
+  const name = await signUp(page, "Dates");
+  const { error } = await adminClient().from("profiles").update({ role: "college_admin" }).eq("full_name", name);
+  if (error) throw error;
+  await page.goto("/events/new");
+  await page.getByLabel("Title").fill("Date check event");
+  await page.getByLabel("Venue").fill("Hall");
+  // The browser drops an impossible date such as 31 February, so the server sees none.
+  await page.getByLabel("Starts").evaluate((el: HTMLInputElement) => (el.value = "2026-02-31T10:00"));
+  await page.getByLabel("Ends").evaluate((el: HTMLInputElement) => (el.value = "2026-02-31T11:00"));
+  await page.getByRole("button", { name: "Create event" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Enter real start and end dates and times." })).toBeVisible();
+});

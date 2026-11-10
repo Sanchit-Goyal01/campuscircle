@@ -37,3 +37,17 @@ describe("monthGrid", () => {
     expect(days.find((d) => d.date === "2026-11-10")!.events).toHaveLength(1);
   });
 });
+
+describe("parseLocal", () => {
+  test("reads campus time and rejects dates that would roll over", async () => {
+    const { parseLocal } = await import("../../src/modules/events/calendar");
+    expect(parseLocal("2026-11-10T10:00")).toBe("2026-11-10T04:30:00.000Z");
+    expect(parseLocal("2026-02-31T10:00")).toBeNull();
+    expect(parseLocal("2026-04-31T10:00")).toBeNull();
+    expect(parseLocal("2026-11-10T24:00")).toBeNull();
+    expect(parseLocal("2026-11-10T25:00")).toBeNull();
+    expect(parseLocal("2026-11-10 10:00")).toBeNull();
+    expect(parseLocal("")).toBeNull();
+    expect(parseLocal("2028-02-29T10:00")).not.toBeNull();
+  });
+});

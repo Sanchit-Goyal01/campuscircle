@@ -16,10 +16,13 @@ create table public.listings (
   search tsvector generated always as
     (to_tsvector('simple', title || ' ' || description)) stored,
   created_at timestamptz not null default now(),
-  -- A photo must live in the seller's own folder.
+  -- A photo must live in the seller's own folder: one filename segment, no
+  -- slashes or dots-only names after the prefix.
   constraint listings_photo_path_owner check (
     photo_path is null
-    or photo_path like college_id::text || '/' || seller_id::text || '/%'
+    or (photo_path like college_id::text || '/' || seller_id::text || '/%'
+        and substr(photo_path, char_length(college_id::text || '/' || seller_id::text || '/') + 1)
+            ~ '^[A-Za-z0-9][A-Za-z0-9._-]*$')
   )
 );
 create index listings_search_idx on public.listings using gin (search);

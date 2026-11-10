@@ -1,5 +1,6 @@
 import { AgentPanel } from "@/agent/ui/AgentPanel";
 import { getProfile } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { allTools } from "@/modules";
 import { formatWhen, upcomingRegisteredEvents } from "@/modules/events/queries";
@@ -8,7 +9,7 @@ import { pendingMentorshipCounts } from "@/modules/people/queries";
 
 const link = "underline";
 
-async function StudentShortcuts({ db, userId }: { db: Parameters<typeof upcomingRegisteredEvents>[0]; userId: string }) {
+async function StudentShortcuts({ db, userId }: { db: SupabaseClient; userId: string }) {
   const [events, counts, listings] = await Promise.all([
     upcomingRegisteredEvents(db, userId, 3),
     pendingMentorshipCounts(db, userId),
