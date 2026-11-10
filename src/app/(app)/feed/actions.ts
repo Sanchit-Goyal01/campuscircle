@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getProfile } from "@/lib/supabase/server";
+import { p0001Token } from "@/lib/pg-error";
 import { UUID } from "@/modules/academics/http";
 
 export type FeedState = { error?: string; ok?: boolean };
@@ -17,7 +18,7 @@ export async function createPost(_prev: FeedState, formData: FormData): Promise<
   if (photo && !photo.startsWith(`${me.profile.college_id}/${me.userId}/`)) return { error: "The photo is not valid. Upload it again." };
   const { error } = await me.db.rpc("create_post", { p_body: body, p_photo_path: photo || null });
   if (error) {
-    if (error.code === "P0001" && error.message === "too_many_posts") return { error: "You have posted too many times today. Try again tomorrow." };
+    if (p0001Token(error) === "too_many_posts") return { error: "You have posted too many times today. Try again tomorrow." };
     if (error.code === "23514") return { error: "Check the post text and photo." };
     if (error.code === "42501") return { error: "You can't post to this feed." };
     console.error("Create post failed:", error.message);
@@ -55,9 +56,11 @@ export async function reportPost(_prev: FeedState, formData: FormData): Promise<
   if (!me) return { error: GENERIC };
   const { error } = await me.db.rpc("report_post", { p_post_id: id, p_reason: reason });
   if (error) {
-    if (error.code === "23505" || (error.code === "P0001" && error.message === "You already reported this post.")) {
+    const token = p0001Token(error);
+    if (error.code === "23505" || token === "already_reported") {
       return { error: "You already reported this post." };
     }
+    if (token === "too_many_reports") return { error: "You have reported too many posts today. Try again tomorrow." };
     if (error.code === "42501") return { error: "You can't report this post." };
     if (error.code === "23514") return { error: "Write a reason of 3 to 300 characters." };
     console.error("Report post failed:", error.message);

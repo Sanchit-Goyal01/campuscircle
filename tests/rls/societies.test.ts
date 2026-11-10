@@ -145,6 +145,45 @@ describe("societies", { timeout: 60_000 }, () => {
     expect((await other.client.rpc("society_member_count", { p_society_id: socX })).data).toBe(0);
   });
 
+  test("withdraw and re-request loops cannot spam the admin: 24-hour cooldown after withdrawing", async () => {
+    const w = await createStudent(`w-${run}@sa-${run}.edu`);
+    const req = async () => (await w.client.rpc("request_to_join", { p_society_id: socY })).error;
+    const leave = () => w.client.rpc("leave_society", { p_society_id: socY });
+    const forW = async () => (await notes(adminY.id, "society_join_request")).filter((n) => n.body.includes(`w-${run}`)).length;
+    const before = await forW();
+    expect(await req()).toBeNull();
+    expect((await leave()).error).toBeNull();
+    for (let i = 0; i < 3; i++) {
+      const again = await req();
+      expect(again?.code).toBe("P0001");
+      expect(again?.message).toBe("withdrew_recently");
+      expect((await leave()).error).toBeNull();
+    }
+    expect((await forW()) - before).toBeLessThanOrEqual(1);
+    // The withdrawn row is a marker only: not a member, not counted, still the student's own.
+    const { data } = await adminClient().from("society_members").select("status").eq("society_id", socY).eq("student_id", w.id).single();
+    expect(data?.status).toBe("withdrawn");
+    expect((await w.client.rpc("society_member_count", { p_society_id: socY })).data).toBe(0);
+    // After 24 hours the request goes through again (and notifies once more).
+    await adminClient().from("society_members").update({ decided_at: new Date(Date.now() - 25 * 3_600_000).toISOString() }).eq("society_id", socY).eq("student_id", w.id);
+    expect(await req()).toBeNull();
+    expect((await forW()) - before).toBe(2);
+    // The decline rule keeps its 7 days: a withdrawn row never shortens it, and it cannot be decided while withdrawn.
+    expect((await leave()).error).toBeNull();
+    expect((await adminY.client.rpc("decide_join", { p_society_id: socY, p_student_id: w.id, p_accept: true })).error?.code).toBe("42501");
+  });
+
+  test("a society admin can post at most 5 announcements per society per 24 hours", async () => {
+    const post = (t: string) => adminY.client.rpc("post_society_announcement", { p_society_id: socY, p_title: t, p_body: "Body" });
+    for (let i = 0; i < 5; i++) expect((await post(`Notice ${i} ${run}`)).error).toBeNull();
+    const over = await post(`Notice 6 ${run}`);
+    expect(over.error?.code).toBe("P0001");
+    expect(over.error?.message).toBe("too_many_announcements");
+    // Old announcements fall out of the window.
+    await adminClient().from("society_announcements").update({ created_at: new Date(Date.now() - 25 * 3_600_000).toISOString() }).eq("society_id", socY);
+    expect((await post(`Notice 7 ${run}`)).error).toBeNull();
+  });
+
   test("announcement notifies approved members only", async () => {
     const m1 = await createStudent(`m1-${run}@sa-${run}.edu`);
     const m2 = await createStudent(`m2-${run}@sa-${run}.edu`); // pending

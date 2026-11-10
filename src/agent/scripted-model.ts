@@ -113,14 +113,14 @@ function messageTurn(messages: AgentMessage[], name: string, body: string): Mode
 
 /**
  * Test double for end-to-end runs. Picks its turn by keyword in the first user
- * message. Order matters and is fixed: "fail" throws, then a lone submit_* tool,
+ * message. Order matters and is fixed: "fail" throws (except in a leading "message <name>: <text>", so "message Priya: I failed the quiz" is sent), then a lone submit_* tool,
  * then a leading "message <name>: <text>", then my complaints, campus, complain, weak, notes, papers, exam, plan, marks. The first match wins.
  */
 export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {
     async next({ messages, tools, toolChoice }) {
       const message = firstUserMessage(messages);
-      if (message.includes('fail')) throw new Error('Scripted model failure');
+      if (message.includes('fail') && !MESSAGE_RE.test(message)) throw new Error('Scripted model failure');
 
       // Issue intake forces one tool; the original-case text is needed for titles and ids.
       if (toolChoice?.name === 'submit_classification') {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { allTools } from "@/modules";
 import { formatWhen, upcomingRegisteredEvents } from "@/modules/events/queries";
 import { formatPrice, myAvailableListings } from "@/modules/market/queries";
-import { listAnnouncements } from "@/modules/admin/queries";
+import { loadAnnouncements } from "@/modules/admin/queries";
 import { pendingMentorshipCounts } from "@/modules/people/queries";
 
 const link = "underline";
@@ -93,11 +93,13 @@ async function StudentShortcuts({ db, userId }: { db: SupabaseClient; userId: st
 }
 
 async function LatestAnnouncements({ db }: { db: SupabaseClient }) {
-  const items = await listAnnouncements(db, 3);
+  const { items, failed } = await loadAnnouncements(db, 3);
   return (
     <section aria-label="College announcements" className="flex flex-col gap-2 border border-zinc-300 p-3 text-sm">
       <h2 className="text-lg font-semibold">College announcements</h2>
-      {items.length === 0 ? (
+      {failed ? (
+        <p>Announcements could not be loaded right now.</p>
+      ) : items.length === 0 ? (
         <p>No announcements yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">

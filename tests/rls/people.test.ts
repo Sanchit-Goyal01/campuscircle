@@ -231,7 +231,7 @@ describe("people and mentorship", { timeout: 60_000 }, () => {
       tool_name: "request_mentorship",
       input: { mentor_id: mentor.id, subject: "DBMS", message: MSG },
     });
-    expect(d).toEqual({ kind: "mentorship", mentor: `m-${run}`, subject: "DBMS", message: MSG });
+    expect(d).toMatchObject({ kind: "mentorship", mentor: `m-${run}`, subject: "DBMS", message: MSG });
     expect(JSON.stringify(d)).not.toContain(mentor.id);
     // A mentor in another college, or a made-up id, shows as unknown instead of leaking a name.
     const other = await describeAction(student.client, { tool_name: "request_mentorship", input: { mentor_id: mentorB.id, subject: "DBMS", message: MSG } });

@@ -81,3 +81,22 @@ test("student reports a post and sees a confirmation", async ({ page, browser, b
   await expect(card.getByText("You already reported this post.")).toBeVisible();
   await ctx.close();
 });
+
+test("a long unbroken string in a post and a comment does not overflow the page at 375px", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await signUp(page, "Longtext");
+  const long = `Z${Date.now()}`.padEnd(300, "x");
+  await page.goto("/feed");
+  await page.getByLabel("What is happening?").fill(long);
+  await page.getByRole("button", { name: "Post" }).click();
+  const card = page.getByRole("article").filter({ hasText: long });
+  await expect(card).toBeVisible({ timeout: 25_000 });
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  await expect.poll(overflow, { timeout: 5000 }).toBeLessThanOrEqual(0);
+  await card.getByRole("link", { name: /Comments/ }).click();
+  await expect(page).toHaveURL(/\/feed\/[0-9a-f-]{36}$/);
+  await page.getByRole("textbox", { name: "Comment" }).fill(long);
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(page.getByText(long)).toHaveCount(2);
+  await expect.poll(overflow, { timeout: 5000 }).toBeLessThanOrEqual(0);
+});

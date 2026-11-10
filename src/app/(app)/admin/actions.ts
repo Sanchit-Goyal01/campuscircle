@@ -57,10 +57,14 @@ export async function deleteAnnouncement(_prev: AdminState, formData: FormData):
   if (!UUID.test(id)) return { error: GENERIC };
   const me = await getProfile();
   if (!me) return { error: GENERIC };
-  const { error } = await me.db.from("college_announcements").delete().eq("id", id);
+  const { data, error } = await me.db.from("college_announcements").delete().eq("id", id).select("id");
   if (error) {
     console.error("Delete announcement failed:", error.message);
     return { error: error.code === "42501" ? NOT_ADMIN : GENERIC };
+  }
+  if (!data || data.length === 0) {
+    refresh();
+    return { error: "This announcement was already removed or is not yours to remove." };
   }
   refresh();
   return { ok: true };

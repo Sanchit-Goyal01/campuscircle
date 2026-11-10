@@ -1,16 +1,18 @@
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { formatWhen } from "@/modules/events/queries";
-import { listAnnouncements } from "@/modules/admin/queries";
+import { loadAnnouncements } from "@/modules/admin/queries";
 
 async function Announcements() {
   const me = await getProfile();
   if (!me) return null; // layout renders the no-profile message
-  const items = await listAnnouncements(me.db, 100);
+  const { items, failed } = await loadAnnouncements(me.db, 100);
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <h1 className="font-slab text-3xl font-bold">Announcements</h1>
-      {items.length === 0 ? (
+      {failed ? (
+        <p>Announcements could not be loaded right now.</p>
+      ) : items.length === 0 ? (
         <p>No announcements yet.</p>
       ) : (
         <ul className="flex flex-col gap-3">

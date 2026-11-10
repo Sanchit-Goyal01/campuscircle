@@ -163,11 +163,33 @@ describe("messaging", { timeout: 90_000 }, () => {
   test("find_person with % or _ does not match everyone", async () => {
     const find = allTools.find((x) => x.name === "find_person")!;
     const ctx = ctxFor(a, collegeA);
-    for (const name of ["%%", "__", "%_", `%${run}`]) {
+    for (const name of ["%%", "__", "%_", `%${run}`, "**", "*"]) {
       expect(await find.run({ name }, ctx)).toEqual([]);
     }
     const hit = (await find.run({ name: `B-${run}` }, ctx)) as any[];
     expect(hit.map((p) => p.person_id)).toEqual([b.id]);
+  });
+
+  test("approval cards flag a recipient or mentor whose exact name is shared in the college", async () => {
+    const { describeAction } = await import("../../src/agent/display");
+    const t1 = await createStudent(`tw1-${run}@ma-${run}.edu`);
+    const t2 = await createStudent(`tw2-${run}@ma-${run}.edu`);
+    const viewer = await createStudent(`vw-${run}@ma-${run}.edu`);
+    const twin = `Twin Name ${run}`;
+    for (const s of [t1, t2]) {
+      expect((await s.client.from("profiles").update({ full_name: twin, skills: ["Python", "ML", "Go"] }).eq("id", s.id)).error).toBeNull();
+    }
+    // Same name in another college does not count.
+    expect((await xB.client.from("profiles").update({ full_name: twin }).eq("id", xB.id)).error).toBeNull();
+    const m = (await describeAction(viewer.client, { tool_name: "send_message", input: { recipient_id: t1.id, body: "hi" } })) as any;
+    expect(m.person).toMatchObject({ name: twin, sameNameCount: 2, verified: false });
+    expect(m.person.detail).toBe("student, Python, ML");
+    const mm = (await describeAction(viewer.client, { tool_name: "request_mentorship", input: { mentor_id: t2.id, subject: "x", message: "hello there" } })) as any;
+    expect(mm).toMatchObject({ kind: "mentorship", mentor: twin });
+    expect(mm.person.sameNameCount).toBe(2);
+    // A unique name has no warning.
+    const u = (await describeAction(viewer.client, { tool_name: "send_message", input: { recipient_id: b.id, body: "hi" } })) as any;
+    expect(u.person.sameNameCount).toBe(1);
   });
 
   test("send_message tool runs only after approval and the card shows the name, not the id", async () => {
@@ -185,7 +207,9 @@ describe("messaging", { timeout: 90_000 }, () => {
 
     const { describeAction } = await import("../../src/agent/display");
     const d = await describeAction(t.client, { tool_name: "send_message", input });
-    expect(d).toEqual({ kind: "message", recipient: `b-${run}`, body: "Sent through the agent" });
+    expect(d).toMatchObject({ kind: "message", recipient: `b-${run}`, body: "Sent through the agent" });
+    expect((d as any).person).toMatchObject({ name: `b-${run}`, verified: false, sameNameCount: 1 });
+    expect((d as any).person.detail).toContain("student");
     expect(JSON.stringify(d)).not.toContain(b.id);
     expect(await describeAction(t.client, { tool_name: "send_message", input: { recipient_id: xB.id, body: "x" } })).toMatchObject({ kind: "message", recipient: null });
     expect(await describeAction(t.client, { tool_name: "send_message", input: { recipient_id: "nope", body: "x" } })).toMatchObject({ recipient: null });

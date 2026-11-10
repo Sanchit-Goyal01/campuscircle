@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getProfile } from "@/lib/supabase/server";
+import { p0001Token } from "@/lib/pg-error";
 import { UUID } from "@/modules/academics/http";
 
 export type MessageState = { error?: string; ok?: boolean };
@@ -35,7 +36,7 @@ export async function sendMessageAction(_prev: MessageState, formData: FormData)
   if (!me) return { error: GENERIC };
   const { error } = await me.db.rpc("send_message", { p_recipient_id: recipient, p_body: body });
   if (error) {
-    if (error.code === "P0001" && error.message === "too_many_messages") {
+    if (p0001Token(error) === "too_many_messages") {
       return { error: "You have sent too many messages this hour. Try again later." };
     }
     if (error.code === "42501") return { error: "You can't message this person." };

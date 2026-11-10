@@ -33,6 +33,15 @@ describe("find_person", () => {
     expect(like![1]).toEqual(["full_name", "%50\\%\\_off\\\\x%"]);
   });
 
+  test("find_person strips PostgREST's * alias, and a name of only * matches nothing", async () => {
+    const { db, calls } = fakeDb();
+    await findPerson.run({ name: "pr*ya" }, ctx(db));
+    expect(calls.find(([m]) => m === "ilike")![1]).toEqual(["full_name", "%prya%"]);
+    const again = fakeDb();
+    expect(await findPerson.run({ name: "**" }, ctx(again.db))).toEqual([]);
+    expect(again.calls.find(([m]) => m === "ilike")).toBeUndefined();
+  });
+
   test("name must be 2 to 80 characters; ids use the shared pattern", () => {
     expect(findPerson.input.safeParse({ name: "a" }).success).toBe(false);
     expect(findPerson.input.safeParse({ name: "a".repeat(81) }).success).toBe(false);
@@ -83,5 +92,11 @@ describe("scripted message rule", () => {
     expect(await name("how are my marks")).toBe("get_marks");
     expect(await name("I'm weak in DBMS and my exam is in 10 days.")).toBe("get_marks");
     expect(await name("message")).not.toBe("find_person");
+  });
+
+  test("a message whose text contains 'fail' is not shadowed by the fail rule", async () => {
+    const turn = await step([user("message Priya: I failed the quiz")]);
+    expect(turn.toolCalls[0]?.name).toBe("find_person");
+    await expect(step([user("please fail")])).rejects.toThrow();
   });
 });

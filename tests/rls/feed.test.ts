@@ -96,9 +96,26 @@ describe("feed", { timeout: 60_000 }, () => {
     expect((await reader.client.rpc("report_post", { p_post_id: id, p_reason: "spam spam" })).error).toBeNull();
     const dup = await reader.client.rpc("report_post", { p_post_id: id, p_reason: "spam again" });
     expect(dup.error?.code).toBe("P0001");
-    expect(dup.error?.message).toBe("You already reported this post.");
+    expect(dup.error?.message).toBe("already_reported");
     expect((await studentB.client.rpc("report_post", { p_post_id: id, p_reason: "spam spam" })).error?.code).toBe("42501");
     expect((await reader.client.rpc("report_post", { p_post_id: id, p_reason: "x" })).error).not.toBeNull();
+  });
+
+  test("a student can report at most 20 posts per 24 hours", async () => {
+    const reporter2 = await createStudent(`rc-${run}@fa-${run}.edu`);
+    const writer = await createStudent(`wr-${run}@fa-${run}.edu`);
+    const rows = Array.from({ length: 21 }, (_, i) => ({ college_id: collegeA, author_id: writer.id, body: `cap ${run} ${i}` }));
+    const { data, error } = await adminClient().from("posts").insert(rows).select("id");
+    expect(error).toBeNull();
+    const ids = data!.map((r) => r.id as string);
+    for (const id of ids.slice(0, 20)) {
+      expect((await reporter2.client.rpc("report_post", { p_post_id: id, p_reason: "report me" })).error).toBeNull();
+    }
+    const over = await reporter2.client.rpc("report_post", { p_post_id: ids[20], p_reason: "report me" });
+    expect(over.error?.code).toBe("P0001");
+    expect(over.error?.message).toBe("too_many_reports");
+    // Another student is not affected.
+    expect((await reader.client.rpc("report_post", { p_post_id: ids[20], p_reason: "report me" })).error).toBeNull();
   });
 
   test("reporter sees own report; another student does not", async () => {
@@ -107,7 +124,9 @@ describe("feed", { timeout: 60_000 }, () => {
     expect((await reader.client.from("post_reports").select("reason").eq("post_id", id)).data).toEqual([{ reason: "offensive" }]);
     expect((await spammer.client.from("post_reports").select("id").eq("post_id", id)).data).toEqual([]);
     expect((await author.client.from("post_reports").select("id").eq("post_id", id)).data).toEqual([]);
-    expect((await admin.client.from("post_reports").select("id").eq("post_id", id)).data).toHaveLength(1);
+    // Admins have no direct read of reports (reporter identity); they use reported_posts_queue.
+    expect((await admin.client.from("post_reports").select("id").eq("post_id", id)).data ?? []).toEqual([]);
+    expect(((await admin.client.rpc("reported_posts_queue", {})).data as any[]).some((r) => r.post_id === id)).toBe(true);
     expect((await reader.client.from("post_reports").update({ status: "dismissed" }).eq("post_id", id)).error?.code).toBe("42501");
     expect((await reader.client.from("post_reports").insert({ post_id: id, reason: "abc" })).error?.code).toBe("42501");
   });

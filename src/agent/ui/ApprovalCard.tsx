@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import type { PersonDisplay } from '../display';
 import { humanizeToolName, type PendingAction } from './types';
 
 const TOOL_LABELS: Record<string, string> = {
@@ -45,6 +46,22 @@ type Decision =
   | { state: 'rejected' }
   | { state: 'failed'; reason: string }
   | { state: 'stale' };
+
+/** Verified badge, role and skills of the person an action targets, plus a warning when the name is shared. */
+function PersonNote({ person }: { person: PersonDisplay }) {
+  if (!person.name) return null;
+  const parts = [person.verified ? 'Verified' : null, person.detail || null].filter(Boolean);
+  return (
+    <>
+      {parts.length > 0 && <p className="slip-note">{parts.join(' · ')}</p>}
+      {person.sameNameCount > 1 && (
+        <p className="slip-note" role="alert">
+          {person.sameNameCount} people in your college have this name. Check this is the right person.
+        </p>
+      )}
+    </>
+  );
+}
 
 export function ApprovalCard({ action }: { action: PendingAction }) {
   const [decision, setDecision] = useState<Decision>({ state: 'pending' });
@@ -111,12 +128,14 @@ export function ApprovalCard({ action }: { action: PendingAction }) {
       ) : action.display?.kind === 'mentorship' ? (
         <>
           <p className="slip-title">{action.display.mentor ?? 'A mentor we could not find'}</p>
+          <PersonNote person={action.display.person} />
           <p className="slip-note">Subject: {action.display.subject}</p>
           <p>{action.display.message}</p>
         </>
       ) : action.display?.kind === 'message' ? (
         <>
           <p className="slip-title">Send a message to {action.display.recipient ?? 'someone we could not find'}</p>
+          <PersonNote person={action.display.person} />
           <p className="whitespace-pre-wrap">{action.display.body}</p>
         </>
       ) : action.display?.kind === 'event' ? (

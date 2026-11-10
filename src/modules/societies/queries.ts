@@ -34,7 +34,10 @@ async function myStatuses(db: SupabaseClient, userId: string): Promise<Map<strin
   // RLS returns the caller's own rows (and, for an admin, their society's rows), so filter by student.
   const { data, error } = await db.from('society_members').select('society_id, status').eq('student_id', userId);
   if (error) throw new Error(`Could not load memberships: ${error.message}`);
-  return new Map((data ?? []).map((r) => [r.society_id as string, r.status as MemberStatus]));
+  // A withdrawn request only exists as a cooldown marker; the UI treats it as no membership.
+  return new Map(
+    (data ?? []).filter((r) => r.status !== 'withdrawn').map((r) => [r.society_id as string, r.status as MemberStatus]),
+  );
 }
 
 /** Societies of the caller's college (RLS), with approved member counts and the caller's own status. */

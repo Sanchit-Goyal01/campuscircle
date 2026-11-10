@@ -72,15 +72,17 @@ test("agent: \"message <B name>: hello\" shows an approval card with B's name; a
   const pa = await ctxA.newPage();
   const a = await signUp(pa, "Agentsender");
 
-  await pa.getByLabel("Ask CampusCircle").fill(`message ${b.name}: hello from the agent`);
+  // Unique per run, so the spec can be rerun without db:reset.
+  const agentBody = `hello from the agent ${Date.now()}`;
+  await pa.getByLabel("Ask CampusCircle").fill(`message ${b.name}: ${agentBody}`);
   await pa.getByRole("button", { name: "Send" }).click();
   const card = pa.getByRole("region", { name: /Approval request/ });
   await expect(card).toHaveCount(1, { timeout: 45_000 });
   await expect(card).toContainText(`Send a message to ${b.name}`);
-  await expect(card).toContainText("hello from the agent");
+  await expect(card).toContainText(agentBody);
   await expect(card).not.toContainText(UUID_IN_TEXT);
   await expect(card).not.toContainText("recipient_id");
-  const sent = await adminClient().from("messages").select("id", { count: "exact", head: true }).eq("body", "hello from the agent");
+  const sent = await adminClient().from("messages").select("id", { count: "exact", head: true }).eq("body", agentBody);
   expect(sent.count).toBe(0);
   await card.getByRole("button", { name: "Approve" }).click();
   await expect(card.getByText("This action is done.")).toBeVisible({ timeout: 30_000 });
@@ -89,9 +91,9 @@ test("agent: \"message <B name>: hello\" shows an approval card with B's name; a
   // One unread conversation shows in the sidebar until the thread is opened.
   await expect(page.getByRole("link", { name: "Messages (1)" })).toBeVisible();
   const row = page.getByRole("listitem").filter({ hasText: a.name });
-  await expect(row).toContainText("hello from the agent");
+  await expect(row).toContainText(agentBody);
   await row.getByRole("link").first().click();
-  await expect(page.getByText("hello from the agent")).toBeVisible();
+  await expect(page.getByText(agentBody)).toBeVisible();
   await expect(page.getByRole("link", { name: "Messages", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("link", { name: "Messages (1)" })).toHaveCount(0);
 

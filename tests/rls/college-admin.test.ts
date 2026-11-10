@@ -99,6 +99,42 @@ describe("college admin", { timeout: 60_000 }, () => {
     expect((await reportedPosts(adminB.client)).some((x) => x.id === id)).toBe(false);
   });
 
+  test("a college admin cannot read reporter identities through the API; a reporter sees only their own rows", async () => {
+    const id = await mkPost(`anon ${run}`);
+    expect((await reporter.client.rpc("report_post", { p_post_id: id, p_reason: "rude words" })).error).toBeNull();
+    expect((await student.client.rpc("report_post", { p_post_id: id, p_reason: "also rude" })).error).toBeNull();
+    // Direct reads: no rows at all for the admin, whichever columns are asked for.
+    for (const cols of ["reporter_id", "reporter_id, post_id", "*", "post_id, reason"]) {
+      const res = await admin.client.from("post_reports").select(cols).eq("post_id", id);
+      expect(res.data ?? []).toEqual([]);
+    }
+    expect((await admin.client.from("post_reports").select("reporter_id").eq("reporter_id", reporter.id)).data ?? []).toEqual([]);
+    // Reporters see only their own row.
+    const own = await reporter.client.from("post_reports").select("reporter_id").eq("post_id", id);
+    expect(own.data).toEqual([{ reporter_id: reporter.id }]);
+    // The queue function groups and counts in SQL with no reporter column; others cannot call it.
+    const q = await admin.client.rpc("reported_posts_queue", { p_limit: 100 });
+    expect(q.error).toBeNull();
+    const row = (q.data as any[]).find((r) => r.post_id === id);
+    expect(row).toMatchObject({ report_count: 2 });
+    expect(row.reasons.sort()).toEqual(["also rude", "rude words"]);
+    expect(JSON.stringify(q.data)).not.toContain(reporter.id);
+    expect(Object.keys(row).sort()).toEqual(["first_reported_at", "post_id", "reasons", "report_count"]);
+    expect((await student.client.rpc("reported_posts_queue", {})).error?.code).toBe("42501");
+    expect((await adminB.client.rpc("reported_posts_queue", {})).data).toEqual([]);
+  });
+
+  test("the unverified-student search treats * and % as plain text", async () => {
+    const { unverifiedStudents } = await import("../../src/modules/admin/queries");
+    const all = await unverifiedStudents(admin.client, { limit: 100 });
+    expect(all.length).toBeGreaterThan(1);
+    const star = await unverifiedStudents(admin.client, { query: `*${run}`, limit: 100 });
+    expect(star.every((s) => s.name.includes(run))).toBe(true);
+    const hit = await unverifiedStudents(admin.client, { query: `st-${run}` });
+    expect(hit.map((s) => s.id)).toEqual([student.id]);
+    for (const q of ["%", "_"]) expect(await unverifiedStudents(admin.client, { query: q })).toEqual([]);
+  });
+
   test("student cannot insert a college announcement", async () => {
     const { data: prof } = await adminClient().from("profiles").select("college_id").eq("id", student.id).single();
     const row = { college_id: prof!.college_id, author_id: student.id, title: "Hello all", body: "Body" };

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getProfile } from "@/lib/supabase/server";
+import { p0001Token } from "@/lib/pg-error";
 import { UUID } from "@/modules/academics/http";
 
 export type SocietyState = { error?: string; ok?: boolean };
@@ -20,9 +21,13 @@ export async function requestToJoin(societyId: string): Promise<SocietyState> {
   if (!me) return { error: GENERIC };
   const { error } = await me.db.rpc("request_to_join", { p_society_id: societyId });
   if (error) {
-    if (error.message === "already_requested") return { error: "You already asked to join this society." };
-    if (error.message === "declined_recently") {
+    const token = p0001Token(error);
+    if (token === "already_requested") return { error: "You already asked to join this society." };
+    if (token === "declined_recently") {
       return { error: "Your last request was declined less than 7 days ago. Try again later." };
+    }
+    if (token === "withdrew_recently") {
+      return { error: "You withdrew a request to this society recently. Try again tomorrow." };
     }
     if (error.code === "42501") return { error: "Only students of this college can join this society." };
     console.error("Request to join failed:", error.message);
@@ -78,6 +83,9 @@ export async function postAnnouncement(_prev: SocietyState, formData: FormData):
     p_body: body,
   });
   if (error) {
+    if (p0001Token(error) === "too_many_announcements") {
+      return { error: "This society has posted 5 announcements in the last 24 hours. Try again later." };
+    }
     if (error.code === "42501") return { error: "Only this society's admin can post announcements." };
     if (error.code === "23514") return { error: "Check the title and announcement length." };
     console.error("Post announcement failed:", error.message);

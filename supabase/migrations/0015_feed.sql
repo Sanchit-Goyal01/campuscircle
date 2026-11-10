@@ -122,20 +122,50 @@ create table public.post_reports (
 );
 create index post_reports_college_idx on public.post_reports (college_id, status);
 create index post_reports_reporter_idx on public.post_reports (reporter_id);
+create index post_reports_post_idx on public.post_reports (post_id, status);
 
 alter table public.post_reports enable row level security;
 revoke all on public.post_reports from anon, authenticated;
 grant select on public.post_reports to authenticated;
 
+-- Reporters see only their own rows. College admins get no direct read, so a
+-- reporter's identity cannot reach them through the API; they use
+-- reported_posts_queue(), which returns no reporter column.
 create policy post_reports_select on public.post_reports
   for select to authenticated
   using (
     college_id = public.current_college_id()
-    and (
-      reporter_id = auth.uid()
-      or coalesce(public.app_role_of_user() = 'college_admin', false)
-    )
+    and reporter_id = auth.uid()
   );
+
+create function public.reported_posts_queue(p_limit int default 50)
+returns table (post_id uuid, report_count bigint, reasons text[], first_reported_at timestamptz)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_college uuid := public.current_college_id();
+begin
+  if auth.uid() is null or v_college is null
+     or coalesce(public.app_role_of_user() = 'college_admin', false) is not true then
+    raise exception 'insufficient_privilege' using errcode = '42501';
+  end if;
+  return query
+    select r.post_id, count(*)::bigint, array_agg(r.reason order by r.created_at),
+           min(r.created_at)
+    from public.post_reports r
+    where r.college_id = v_college and r.status = 'open'
+    group by r.post_id
+    order by min(r.created_at), r.post_id
+    limit least(greatest(coalesce(p_limit, 50), 1), 100);
+end;
+$$;
+revoke all on function public.reported_posts_queue(int) from public, anon;
+grant execute on function public.reported_posts_queue(int) to authenticated;
+
+create index posts_photo_path_idx on public.posts (photo_path) where photo_path is not null;
 
 -- Storage: private jpeg-only bucket, <college_id>/<author_id>/<uuid>.jpg.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -245,7 +275,12 @@ begin
   end if;
   if exists (select 1 from public.post_reports
              where post_id = p_post_id and reporter_id = v_uid) then
-    raise exception 'You already reported this post.' using errcode = 'P0001';
+    raise exception 'already_reported' using errcode = 'P0001';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('report_post:' || v_uid::text, 0));
+  if (select count(*) from public.post_reports
+      where reporter_id = v_uid and created_at > now() - interval '24 hours') >= 20 then
+    raise exception 'too_many_reports' using errcode = 'P0001';
   end if;
   insert into public.post_reports (post_id, college_id, reporter_id, reason)
   values (p_post_id, v_college, v_uid, v_reason);

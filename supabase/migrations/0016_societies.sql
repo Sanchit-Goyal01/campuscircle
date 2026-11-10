@@ -68,7 +68,7 @@ create table public.society_members (
   society_id uuid not null references public.societies (id) on delete cascade,
   student_id uuid not null references public.profiles (id) on delete cascade,
   college_id uuid not null references public.colleges (id) on delete cascade,
-  status text not null default 'pending' check (status in ('pending', 'approved', 'declined')),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'declined', 'withdrawn')),
   created_at timestamptz not null default now(),
   decided_at timestamptz,
   primary key (society_id, student_id)
@@ -166,7 +166,10 @@ begin
     if v_row.status in ('pending', 'approved') then
       raise exception 'already_requested' using errcode = 'P0001';
     end if;
-    if v_row.decided_at > now() - interval '7 days' then
+    if v_row.status = 'withdrawn' and v_row.decided_at > now() - interval '24 hours' then
+      raise exception 'withdrew_recently' using errcode = 'P0001';
+    end if;
+    if v_row.status = 'declined' and v_row.decided_at > now() - interval '7 days' then
       raise exception 'declined_recently' using errcode = 'P0001';
     end if;
     update public.society_members
@@ -232,8 +235,9 @@ $$;
 revoke all on function public.decide_join(uuid, uuid, boolean) from public, anon;
 grant execute on function public.decide_join(uuid, uuid, boolean) to authenticated;
 
--- Leaving removes a pending or approved row. A declined row stays so that
--- leaving cannot be used to skip the 7-day wait.
+-- Leaving removes an approved row. Withdrawing a pending request keeps the row
+-- as 'withdrawn' (a 24-hour cooldown against notification loops), and a
+-- declined row stays so that leaving cannot skip the 7-day wait.
 create function public.leave_society(p_society_id uuid)
 returns void
 language plpgsql
@@ -249,7 +253,12 @@ begin
   delete from public.society_members
   where society_id = p_society_id and student_id = v_uid
     and college_id = public.current_college_id()
-    and status in ('pending', 'approved');
+    and status = 'approved';
+  update public.society_members
+  set status = 'withdrawn', decided_at = now()
+  where society_id = p_society_id and student_id = v_uid
+    and college_id = public.current_college_id()
+    and status = 'pending';
 end;
 $$;
 revoke all on function public.leave_society(uuid) from public, anon;
@@ -280,6 +289,13 @@ begin
   if v_title is null or char_length(v_title) not between 3 and 120
      or v_body is null or char_length(v_body) not between 1 and 4000 then
     raise exception 'invalid_request' using errcode = '23514';
+  end if;
+
+  -- At most 5 announcements per society per 24 hours (each fans out to every member).
+  perform pg_advisory_xact_lock(hashtextextended('society_announce:' || p_society_id::text, 0));
+  if (select count(*) from public.society_announcements
+      where society_id = p_society_id and created_at > now() - interval '24 hours') >= 5 then
+    raise exception 'too_many_announcements' using errcode = 'P0001';
   end if;
 
   insert into public.society_announcements (society_id, college_id, author_id, title, body)

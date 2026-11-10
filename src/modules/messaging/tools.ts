@@ -1,11 +1,15 @@
 import { z } from 'zod';
 import type { AgentTool } from '../../agent/types';
+import { p0001Token } from '../../lib/pg-error';
 import { UUID } from '../academics/http';
 
 const ALL_ROLES = ['student', 'society_admin', 'authority', 'college_admin'] as const;
 
-/** Escapes LIKE wildcards so user text is matched literally. */
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+/**
+ * Escapes LIKE wildcards so user text is matched literally. PostgREST also
+ * treats `*` as `%` and cannot escape it, so `*` is stripped.
+ */
+export const escapeLike = (s: string) => s.replace(/\*/g, '').replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
 const findInput = z.strictObject({ name: z.string().trim().min(2).max(80) });
 
@@ -17,12 +21,14 @@ export const findPerson: AgentTool<z.infer<typeof findInput>> = {
   roles: [...ALL_ROLES],
   input: findInput,
   async run(input, ctx) {
+    const needle = escapeLike(input.name).trim();
+    if (!needle) return [];
     const { data, error } = await ctx.db
       .from('profiles')
       .select('id, full_name, skills, verified')
       .eq('college_id', ctx.collegeId)
       .neq('id', ctx.userId)
-      .ilike('full_name', `%${escapeLike(input.name)}%`)
+      .ilike('full_name', `%${needle}%`)
       .order('full_name')
       .order('id')
       .limit(5);
@@ -55,7 +61,7 @@ export const sendMessage: AgentTool<z.infer<typeof sendInput>> = {
     });
     if (error) {
       if (error.code === '42501') throw new Error('You cannot message that person.');
-      if (error.code === 'P0001' && error.message === 'too_many_messages') {
+      if (p0001Token(error) === 'too_many_messages') {
         throw new Error('You have sent too many messages this hour. Try again later.');
       }
       if (error.code === '23514') throw new Error('The message must be 1 to 2000 characters.');
