@@ -16,6 +16,7 @@ let student: S;
 let other: S;
 let studentB: S;
 let eventId: string;
+let socId: string;
 
 const ctxFor = (s: S, collegeId: string): ToolContext => ({ db: s.client, userId: s.id, collegeId, role: "student" });
 const tool = (name: string) => allTools.find((t) => t.name === name)!;
@@ -39,6 +40,9 @@ beforeAll(async () => {
   student = await createStudent(`s-${run}@ea-${run}.edu`);
   other = await createStudent(`o-${run}@ea-${run}.edu`);
   studentB = await createStudent(`sb-${run}@eb-${run}.edu`);
+  const soc = await adminClient().from("societies").insert({ college_id: collegeA, name: `Events Soc ${run}`, admin_id: society.id }).select("id").single();
+  if (soc.error) throw soc.error;
+  socId = soc.data.id;
 });
 afterAll(() => vi.unstubAllEnvs());
 
@@ -50,7 +54,7 @@ describe("events", { timeout: 60_000 }, () => {
     expect(ins.error).toBeNull();
     expect(ins.data).toMatchObject({ college_id: collegeA, created_by: admin.id });
     eventId = ins.data!.id;
-    const soc = await society.client.from("events").insert(newEvent({ title: "Society meetup" })).select("id").single();
+    const soc = await society.client.from("events").insert(newEvent({ society_id: socId, title: "Society meetup" })).select("id").single();
     expect(soc.error).toBeNull();
     // Checks.
     expect((await admin.client.from("events").insert(newEvent({ ends_at: inDays(4) }))).error?.code).toBe("23514");
@@ -68,7 +72,7 @@ describe("events", { timeout: 60_000 }, () => {
   });
 
   test("staff can update and delete events; college_id cannot be changed", async () => {
-    const ev = await society.client.from("events").insert(newEvent({ title: "Editable" })).select("id").single();
+    const ev = await society.client.from("events").insert(newEvent({ society_id: socId, title: "Editable" })).select("id").single();
     const id = ev.data!.id;
     const upd = await admin.client.from("events").update({ title: "Edited title", capacity: 20 }).eq("id", id).select("title, capacity");
     expect(upd.data).toEqual([{ title: "Edited title", capacity: 20 }]);
@@ -78,7 +82,7 @@ describe("events", { timeout: 60_000 }, () => {
   });
 
   test("a society admin changes only their own events; a college admin changes any in the college", async () => {
-    const mine = await society.client.from("events").insert(newEvent({ title: "Society own" })).select("id").single();
+    const mine = await society.client.from("events").insert(newEvent({ society_id: socId, title: "Society own" })).select("id").single();
     const theirs = await admin.client.from("events").insert(newEvent({ title: "Admin own" })).select("id").single();
     const society2 = await createUserWithRole(`rival-${run}@ea-${run}.edu`, "society_admin");
     // Another society admin cannot touch either.

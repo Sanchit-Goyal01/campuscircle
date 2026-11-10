@@ -13,10 +13,12 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
   if (!me) return null; // layout renders the no-profile message
   const { data: e } = await me.db
     .from("events")
-    .select("id, title, description, venue, starts_at, ends_at, capacity")
+    .select("id, title, description, venue, starts_at, ends_at, capacity, societies(id, name)")
     .eq("id", id)
     .maybeSingle();
   if (!e) notFound();
+  const rel = e.societies as { id: string; name: string } | { id: string; name: string }[] | null;
+  const society = Array.isArray(rel) ? rel[0] : rel;
   const count = await registrationCount(me.db, id);
   const isStudent = me.profile.role === "student";
   let registered = false;
@@ -41,6 +43,14 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       <p className="text-sm">
         {e.capacity === null ? `${count} registered` : `${count} of ${e.capacity} seats taken`}
       </p>
+      {society && (
+        <p className="text-sm">
+          Hosted by{" "}
+          <Link href={`/societies/${society.id}`} className="underline">
+            {society.name}
+          </Link>
+        </p>
+      )}
       {e.description && <p className="whitespace-pre-wrap">{e.description}</p>}
       {isStudent &&
         (registered ? (

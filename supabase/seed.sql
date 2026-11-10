@@ -83,3 +83,27 @@ values
    'Indoor games and a relay race for all hostel residents.',
    'Sports Complex', now() + interval '10 days', now() + interval '10 days 3 hours', null)
 on conflict do nothing;
+
+-- Demo society admin and society, created like Priya above (no password).
+insert into auth.users (
+  instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data,
+  raw_user_meta_data, created_at, updated_at, confirmation_token, recovery_token,
+  email_change, email_change_token_new
+) values (
+  '00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-0000000000aa',
+  'authenticated', 'authenticated', 'arjun.mehta@demo-iot.edu', now(),
+  '{"provider":"email","providers":["email"]}', '{"full_name":"Arjun Mehta"}',
+  now(), now(), '', '', '', ''
+) on conflict do nothing;
+
+update public.profiles set role = 'society_admin'
+where id = '00000000-0000-0000-0000-0000000000aa';
+
+insert into public.societies (id, college_id, name, description, admin_id)
+values (
+  '00000000-0000-0000-0000-0000000000c1',
+  '00000000-0000-0000-0000-00000000a001',
+  'Coding Club',
+  'Weekly problem solving, hack nights and peer teaching for anyone who likes to code.',
+  '00000000-0000-0000-0000-0000000000aa'
+) on conflict do nothing;

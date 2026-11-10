@@ -77,6 +77,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/events" className="text-sm underline">
             Events
           </Link>
+          <Link href="/societies" className="text-sm underline">
+            Societies
+          </Link>
           <Link href="/notifications" className="text-sm underline">
             {unread > 0 ? `Notifications (${unread})` : "Notifications"}
           </Link>

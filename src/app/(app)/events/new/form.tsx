@@ -5,10 +5,21 @@ import { createEvent, type EventState } from "../actions";
 
 const field = "border border-zinc-400 px-2 py-1";
 
-export function NewEventForm() {
+export function NewEventForm({ societies, required }: { societies: { id: string; name: string }[]; required: boolean }) {
   const [state, dispatch, pending] = useActionState<EventState, FormData>(createEvent, {});
   return (
     <form action={dispatch} noValidate className="flex flex-col gap-3">
+      <label className="flex flex-col text-sm">
+        Hosting society{required ? "" : " (optional)"}
+        <select name="society_id" defaultValue="" className={field}>
+          <option value="">{required ? "Choose a society" : "None"}</option>
+          {societies.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="flex flex-col text-sm">
         Title
         <input name="title" maxLength={120} className={field} />

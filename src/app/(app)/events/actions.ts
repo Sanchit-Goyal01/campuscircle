@@ -29,18 +29,21 @@ export async function createEvent(_prev: EventState, formData: FormData): Promis
     }
     capacity = Number(capacityRaw);
   }
+  const societyRaw = String(formData.get("society_id") ?? "");
+  if (societyRaw && !UUID.test(societyRaw)) return { error: "Choose a society from the list." };
   const me = await getProfile();
   if (!me) return { error: GENERIC };
   if (me.profile.role !== "college_admin" && me.profile.role !== "society_admin") {
     return { error: "Only college and society admins can create events." };
   }
+  if (me.profile.role === "society_admin" && !societyRaw) return { error: "Choose the society hosting this event." };
   const { data, error } = await me.db
     .from("events")
-    .insert({ title, venue, description, starts_at: starts, ends_at: ends, capacity })
+    .insert({ title, venue, description, starts_at: starts, ends_at: ends, capacity, society_id: societyRaw || null })
     .select("id")
     .single();
   if (error || !data) {
-    if (error?.code === "42501") return { error: "You can't create events." };
+    if (error?.code === "42501") return { error: "You can't create events for this society." };
     if (error?.code === "23514") return { error: "Check the title, venue, times and capacity." };
     console.error("Create event failed:", error?.message);
     return { error: GENERIC };
