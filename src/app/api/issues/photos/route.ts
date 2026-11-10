@@ -1,4 +1,4 @@
-import { signedOut, unexpected } from '@/agent/api';
+import { errorResponse, signedOut, unexpected } from '@/agent/api';
 import { getToolContext } from '@/lib/supabase/server';
 import { badRequest } from '@/modules/academics/http';
 import { stripAndEncode } from '@/modules/issues/photos';
@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   try {
     const ctx = await getToolContext();
     if (!ctx) return signedOut();
+    if (ctx.role !== 'student') return errorResponse(403, 'Only students can upload issue photos');
 
     if (Number(request.headers.get('content-length')) > MAX_REQUEST_BYTES) return badRequest(TOO_BIG);
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
       try {
         encoded.push(await stripAndEncode(Buffer.from(await f.arrayBuffer())));
       } catch {
-        return badRequest('One of the photos could not be read as an image');
+        return badRequest(BAD_TYPE);
       }
     }
 

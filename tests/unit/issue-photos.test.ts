@@ -25,4 +25,16 @@ describe("stripAndEncode", () => {
   test("rejects a non-image buffer", async () => {
     await expect(stripAndEncode(Buffer.from("not an image at all"))).rejects.toThrow();
   });
+
+  test("rejects SVG and GIF content", async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>');
+    await expect(stripAndEncode(svg)).rejects.toThrow();
+    const gif = await base().gif().toBuffer();
+    await expect(stripAndEncode(gif)).rejects.toThrow();
+  });
+
+  test("rejects an image over the pixel limit", async () => {
+    const bomb = await sharp({ create: { width: 8000, height: 8000, channels: 3, background: "#000" } }).png().toBuffer();
+    await expect(stripAndEncode(bomb)).rejects.toThrow();
+  });
 });

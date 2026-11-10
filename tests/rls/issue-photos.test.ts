@@ -22,6 +22,8 @@ const jpegWithExif = () =>
     .withMetadata({ exif: { IFD0: { Copyright: "secret-gps" } } })
     .toBuffer();
 
+const exifPresent = async (b: Buffer) => expect((await sharp(b).metadata()).exif).toBeDefined();
+
 const upload = (parts: { data: BlobPart; type: string; name?: string }[]) => {
   const form = new FormData();
   parts.forEach((p, i) => form.append("photos", new File([p.data], p.name ?? `p${i}`, { type: p.type })));
@@ -48,7 +50,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("POST /api/issues/photos", () => {
   test("uploaded photo is stored without EXIF under the college folder", async () => {
-    const res = await upload([{ data: new Uint8Array(await jpegWithExif()), type: "image/jpeg" }]);
+    const src = await jpegWithExif();
+    await exifPresent(src);
+    const res = await upload([{ data: new Uint8Array(src), type: "image/jpeg" }]);
     expect(res.status).toBe(200);
     const { paths } = (await res.json()) as { paths: string[] };
     expect(paths).toHaveLength(1);
@@ -80,6 +84,26 @@ describe("POST /api/issues/photos", () => {
     expect(typeof (await res.json()).error).toBe("string");
   });
 
+  test("a gif labelled image/jpeg is refused", async () => {
+    const gif = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } }).gif().toBuffer();
+    const res = await upload([{ data: new Uint8Array(gif), type: "image/jpeg" }]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Photos must be JPEG, PNG or WebP");
+  });
+
+  test("a photo over 8 MB is refused", async () => {
+    const res = await upload([{ data: new Uint8Array(8 * 1024 * 1024 + 1), type: "image/jpeg" }]);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Each photo must be 8 MB or less");
+  });
+
+  test("an authority cannot upload", async () => {
+    session.ctx = { db: authority.client, userId: authority.id, collegeId: college, role: "authority" };
+    const res = await upload([{ data: new Uint8Array(await jpegWithExif()), type: "image/jpeg" }]);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe("Only students can upload issue photos");
+  });
+
   test("signed out is 401", async () => {
     session.ctx = null;
     expect((await upload([{ data: "x", type: "image/jpeg" }])).status).toBe(401);
@@ -91,7 +115,7 @@ describe("POST /api/issues/photos", () => {
 
     const listed = await authority.client.storage.from("issue-photos").list(college);
     expect(listed.error).toBeNull();
-    expect(listed.data!.length).toBeGreaterThan(0);
+    expect(listed.data!.map((o) => `${college}/${o.name}`)).toContain(paths[0]);
     expect(deepContains(listed.data, student.id)).toBe(false);
 
     const info = await authority.client.storage.from("issue-photos").info(paths[0]);
