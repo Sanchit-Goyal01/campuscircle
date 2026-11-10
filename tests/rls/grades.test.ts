@@ -36,7 +36,7 @@ beforeAll(async () => {
 const insertResult = (subject: string, marks: number | null, semester = 1) =>
   student.client
     .from("subject_results")
-    .insert({ student_id: student.id, college_id: college, subject_id: subject, semester, marks, grade_points: 1 })
+    .insert({ student_id: student.id, college_id: college, subject_id: subject, semester, marks })
     .select("id, grade_points")
     .single();
 
@@ -58,6 +58,20 @@ describe("grades", () => {
       .single();
     expect(up.error).toBeNull();
     expect(Number(up.data!.grade_points)).toBe(10);
+  });
+
+  test("a client cannot forge grade points on update or insert", async () => {
+    const s = await newSubject();
+    const { data } = await insertResult(s, 45);
+    const forged = await student.client.from("subject_results").update({ grade_points: 10 }).eq("id", data!.id);
+    expect(forged.error).toMatchObject({ code: "42501" });
+    const stored = await adminClient().from("subject_results").select("grade_points").eq("id", data!.id).single();
+    expect(Number(stored.data!.grade_points)).toBe(5);
+
+    const ins = await student.client
+      .from("subject_results")
+      .insert({ student_id: student.id, college_id: college, subject_id: await newSubject(), semester: 1, marks: 45, grade_points: 10 });
+    expect(ins.error).toMatchObject({ code: "42501" });
   });
 
   test("marks above 100 or below 0 are refused", async () => {

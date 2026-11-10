@@ -185,6 +185,7 @@ create policy academics_insert on storage.objects
   with check (
     bucket_id = 'academics'
     and (storage.foldername(name))[1] = (select public.current_college_id())::text
+    and (storage.foldername(name))[2] in ('notes', 'papers')
     and owner_id = (select auth.uid())::text
   );
 create policy academics_delete on storage.objects

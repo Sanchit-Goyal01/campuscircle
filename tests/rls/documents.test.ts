@@ -165,6 +165,15 @@ describe("documents", () => {
     expect(up.error).toMatchObject({ statusCode: "403" });
   });
 
+  test("uploading outside the notes and papers folders is refused", async () => {
+    const up = await student.client.storage
+      .from("academics")
+      .upload(`${college}/other/${crypto.randomUUID()}.pdf`, new Uint8Array(await textPdf(["x"])), {
+        contentType: "application/pdf",
+      });
+    expect(up.error).toMatchObject({ statusCode: "403" });
+  });
+
   test("only the uploader can delete a note; chunks go with it", async () => {
     const { noteId } = await ingest(["gravity bends spacetime around every massive object in the universe"], "Gravity");
     const admin = adminClient();
