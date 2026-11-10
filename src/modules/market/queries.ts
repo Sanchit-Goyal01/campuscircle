@@ -47,3 +47,20 @@ export async function searchListings(
     };
   });
 }
+
+/** The seller's own available listings, newest first. */
+export async function myAvailableListings(
+  db: SupabaseClient,
+  sellerId: string,
+  limit = 3,
+): Promise<{ id: string; title: string; price_inr: number }[]> {
+  const { data, error } = await db
+    .from('listings')
+    .select('id, title, price_inr')
+    .eq('seller_id', sellerId)
+    .eq('status', 'available')
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(Math.trunc(limit), 1), MAX_LIMIT));
+  if (error) throw new Error(`Could not load your listings: ${error.message}`);
+  return (data ?? []) as { id: string; title: string; price_inr: number }[];
+}

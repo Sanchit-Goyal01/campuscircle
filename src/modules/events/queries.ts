@@ -58,3 +58,31 @@ export async function registrationCount(db: SupabaseClient, eventId: string): Pr
 const fmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-IN', { timeZone: TZ, ...opts });
 export const formatWhen = (iso: string) =>
   fmt({ weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+
+/**
+ * Events the student registered for that start now or later, soonest first.
+ * Registration rows are visible only to their owner (RLS); events to the college.
+ */
+export async function upcomingRegisteredEvents(
+  db: SupabaseClient,
+  studentId: string,
+  limit = 3,
+): Promise<Pick<EventRow, 'id' | 'title' | 'venue' | 'starts_at'>[]> {
+  const { data: regs, error: rErr } = await db
+    .from('event_registrations')
+    .select('event_id')
+    .eq('student_id', studentId)
+    .limit(1000);
+  if (rErr) throw new Error(`Could not load registrations: ${rErr.message}`);
+  const ids = (regs ?? []).map((r) => r.event_id as string);
+  if (ids.length === 0) return [];
+  const { data, error } = await db
+    .from('events')
+    .select('id, title, venue, starts_at')
+    .in('id', ids)
+    .gte('starts_at', new Date().toISOString())
+    .order('starts_at', { ascending: true })
+    .limit(Math.min(Math.max(Math.trunc(limit), 1), MAX_LIMIT));
+  if (error) throw new Error(`Could not load events: ${error.message}`);
+  return (data ?? []) as Pick<EventRow, 'id' | 'title' | 'venue' | 'starts_at'>[];
+}

@@ -45,3 +45,21 @@ export async function findPeople(
       is_mentor: p.is_mentor as boolean,
     }));
 }
+
+/** Pending mentorship requests the student sent (outgoing) and received (incoming). RLS limits rows to the caller's own. */
+export async function pendingMentorshipCounts(
+  db: SupabaseClient,
+  userId: string,
+): Promise<{ incoming: number; outgoing: number }> {
+  const count = async (column: 'mentor_id' | 'student_id') => {
+    const { count: n, error } = await db
+      .from('mentorship_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq(column, userId);
+    if (error) throw new Error(`Could not count mentorship requests: ${error.message}`);
+    return n ?? 0;
+  };
+  const [incoming, outgoing] = await Promise.all([count('mentor_id'), count('student_id')]);
+  return { incoming, outgoing };
+}
