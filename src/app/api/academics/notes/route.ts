@@ -1,7 +1,7 @@
 import { signedOut, unexpected } from '@/agent/api';
 import { getToolContext } from '@/lib/supabase/server';
 import { ingestNote } from '@/modules/academics/ingest';
-import { UUID, badRequest, filePart, textField, uploadErrorResponse } from '@/modules/academics/http';
+import { UUID, badRequest, filePart, textField, tooLargeResponse, uploadErrorResponse } from '@/modules/academics/http';
 
 // Extracting and embedding a long PDF can take a while.
 export const maxDuration = 300;
@@ -12,6 +12,9 @@ export async function POST(request: Request) {
   try {
     const ctx = await getToolContext();
     if (!ctx) return signedOut();
+
+    const tooLarge = tooLargeResponse(request);
+    if (tooLarge) return tooLarge;
 
     const form = await request.formData().catch(() => null);
     if (!form) return badRequest('Send the note as a form upload.');

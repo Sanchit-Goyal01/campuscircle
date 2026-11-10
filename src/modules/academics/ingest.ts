@@ -22,8 +22,7 @@ export class UploadError extends Error {
 type Ctx = Pick<ToolContext, 'collegeId' | 'userId'>;
 
 function looksLikePdf(bytes: Uint8Array): boolean {
-  // "%PDF" may be preceded by a little junk, but must be near the start.
-  return new TextDecoder('latin1').decode(bytes.subarray(0, 1024)).includes('%PDF-');
+  return new TextDecoder('latin1').decode(bytes.subarray(0, 5)).startsWith('%PDF-');
 }
 
 /** Checks type and size, returns the bytes. Page count is checked by the caller. */

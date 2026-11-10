@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { DeleteButton } from "../../delete-button";
 import { deleteNote } from "../../document-actions";
 import { noteStatusLabel } from "../status";
 
@@ -27,7 +28,10 @@ async function NoteDetail({ params }: { params: Promise<{ id: string }> }) {
     .select("id, title, page_count, status, uploaded_by, subjects(name), profiles(full_name)")
     .eq("id", id)
     .maybeSingle();
-  if (error) throw new Error(`Could not load note: ${error.message}`);
+  if (error) {
+    console.error("Could not load note:", error.message);
+    throw new Error("Could not load this note.");
+  }
   // RLS hides notes of other colleges, so they look the same as a missing note.
   if (!data) notFound();
   const note = data as unknown as Note;
@@ -55,12 +59,12 @@ async function NoteDetail({ params }: { params: Promise<{ id: string }> }) {
           Download PDF
         </a>
         {note.uploaded_by === me.userId && (
-          <form action={deleteNote.bind(null, note.id)}>
-            <input type="hidden" name="redirect" value="list" />
-            <button type="submit" className="underline">
-              Delete this note
-            </button>
-          </form>
+          <DeleteButton
+            action={deleteNote.bind(null, note.id)}
+            label={`Delete ${note.title}`}
+            text="Delete this note"
+            redirectToList
+          />
         )}
       </div>
     </div>

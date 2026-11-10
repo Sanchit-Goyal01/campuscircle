@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { DeleteButton } from "../delete-button";
 import { deletePaper } from "../document-actions";
 import { SubjectFilter } from "../subject-filter";
 import { UploadForm } from "../upload-form";
@@ -80,11 +81,7 @@ async function Papers({ searchParams }: { searchParams: Promise<{ subject?: stri
                           Download
                         </a>
                         {p.uploaded_by === me.userId && (
-                          <form action={deletePaper.bind(null, p.id)}>
-                            <button type="submit" className="underline" aria-label={`Delete ${label}`}>
-                              Delete
-                            </button>
-                          </form>
+                          <DeleteButton action={deletePaper.bind(null, p.id)} label={`Delete ${label}`} />
                         )}
                       </td>
                     </tr>

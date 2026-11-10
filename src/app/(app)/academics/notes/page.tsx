@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
+import { DeleteButton } from "../delete-button";
 import { deleteNote } from "../document-actions";
 import { SubjectFilter } from "../subject-filter";
 import { UploadForm } from "../upload-form";
@@ -87,11 +88,7 @@ async function Notes({ searchParams }: { searchParams: Promise<{ subject?: strin
                         Download
                       </a>
                       {n.uploaded_by === me.userId && (
-                        <form action={deleteNote.bind(null, n.id)}>
-                          <button type="submit" className="underline" aria-label={`Delete ${n.title}`}>
-                            Delete
-                          </button>
-                        </form>
+                        <DeleteButton action={deleteNote.bind(null, n.id)} label={`Delete ${n.title}`} />
                       )}
                     </td>
                   </tr>

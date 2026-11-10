@@ -7,6 +7,7 @@ import {
   badRequest,
   filePart,
   textField,
+  tooLargeResponse,
   uploadErrorResponse,
 } from '@/modules/academics/http';
 
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
   try {
     const ctx = await getToolContext();
     if (!ctx) return signedOut();
+
+    const tooLarge = tooLargeResponse(request);
+    if (tooLarge) return tooLarge;
 
     const form = await request.formData().catch(() => null);
     if (!form) return badRequest('Send the paper as a form upload.');

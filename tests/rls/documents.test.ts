@@ -201,6 +201,33 @@ describe("documents", () => {
     expect(error?.code).toBe("42501");
   });
 
+  test("a classmate cannot remove another student's file from Storage", async () => {
+    const { noteId } = await ingest(["storage ownership check for the notes bucket and its files"], "Owned");
+    const admin = adminClient();
+    const { data: note } = await admin.from("notes").select("file_path").eq("id", noteId).single();
+    const path = note!.file_path as string;
+
+    const removed = await mate.client.storage.from("academics").remove([path]);
+    // Delete policy hides the object from the classmate: nothing is removed.
+    expect(removed.data).toEqual([]);
+    expect((await admin.storage.from("academics").download(path)).error).toBeNull();
+
+    // The owner can remove it.
+    const own = await student.client.storage.from("academics").remove([path]);
+    expect(own.data).toHaveLength(1);
+    expect((await admin.storage.from("academics").download(path)).error).not.toBeNull();
+  });
+
+  test("a PDF header that is not at byte 0 is refused as not_pdf", async () => {
+    const bytes = await textPdf(["header offset check"]);
+    const shifted = new Uint8Array(bytes.length + 10);
+    shifted.set(new TextEncoder().encode("junk-junk-"), 0);
+    shifted.set(bytes, 10);
+    await expect(
+      ingestNote(student.client, ctxOf(student, college), { file: pdfFile(shifted), title: "Shifted", subjectId: null }, fake),
+    ).rejects.toMatchObject({ code: "not_pdf" });
+  });
+
   test("papers: upload, classmates read, only uploader deletes", async () => {
     const { paperId } = await uploadPaper(student.client, ctxOf(student, college), {
       file: pdfFile(await textPdf(["paper"])),

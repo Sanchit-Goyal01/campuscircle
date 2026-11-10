@@ -167,3 +167,40 @@ test("uploader deletes a note; a classmate sees no delete button", async ({ page
   expect(rows).toEqual([]);
   expect(await stored()).toBe(false);
 });
+
+test("uploader deletes a past paper; the row and the Storage object are gone", async ({ page }) => {
+  await signUp(page);
+  await uploadPaper(page, "Operating Systems", "2019", "quiz", buf(await textPdf(["Quiz question about process scheduling."])));
+  const row = page.getByRole("row").filter({ hasText: "Operating Systems" }).filter({ hasText: "2019" });
+  await expect(row).toBeVisible(UPLOADED);
+  const id = (await row.getByRole("link", { name: /Download/ }).getAttribute("href"))!.split("/").pop()!;
+
+  const db = adminClient();
+  const { data: paper } = await db.from("past_papers").select("file_path").eq("id", id).single();
+  const folder = paper!.file_path.replace(/\/[^/]+$/, "");
+  const name = paper!.file_path.split("/").pop();
+  const stored = async () => (await db.storage.from("academics").list(folder)).data?.some((o) => o.name === name);
+  expect(await stored()).toBe(true);
+
+  await row.getByRole("button", { name: /Delete/ }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Operating Systems" }).filter({ hasText: "2019" })).toHaveCount(0);
+  expect((await db.from("past_papers").select("id").eq("id", id)).data).toEqual([]);
+  expect(await stored()).toBe(false);
+});
+
+test("file route answers 404 for an inherited property name as kind", async ({ page }) => {
+  await signUp(page);
+  const res = await page.request.get("/api/academics/files/toString/00000000-0000-0000-0000-000000000000", {
+    maxRedirects: 0,
+  });
+  expect(res.status()).toBe(404);
+});
+
+test("upload routes refuse an oversized declared body with 413", async ({ page }) => {
+  await signUp(page);
+  const res = await page.request.post("/api/academics/notes", {
+    multipart: { title: "Big", file: { name: "big.pdf", mimeType: PDF, buffer: Buffer.alloc(22 * 1024 * 1024) } },
+  });
+  expect(res.status()).toBe(413);
+  expect((await res.json()).error).toBe("The file is larger than 20 MB.");
+});

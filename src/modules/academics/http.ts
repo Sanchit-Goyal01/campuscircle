@@ -3,7 +3,6 @@ import { UploadError, type UploadErrorCode } from './ingest';
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-
 const UPLOAD_ERRORS: Record<UploadErrorCode, { status: number; message: string }> = {
   not_pdf: { status: 415, message: 'Only PDF files are allowed.' },
   too_large: { status: 413, message: 'The file is larger than 20 MB.' },
@@ -26,3 +25,11 @@ export function filePart(form: FormData): File | null {
 }
 
 export const textField = (form: FormData, key: string) => String(form.get(key) ?? '').trim();
+
+const MAX_REQUEST_BYTES = 21 * 1024 * 1024;
+
+/** A 413 response when the declared body size is over the upload limit, otherwise null. */
+export function tooLargeResponse(request: Request): Response | null {
+  const declared = Number(request.headers.get('content-length'));
+  return declared > MAX_REQUEST_BYTES ? uploadErrorResponse(new UploadError('too_large', '')) : null;
+}

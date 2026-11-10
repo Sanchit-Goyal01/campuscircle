@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ kin
 
     const { kind, id } = await params;
     const notFound = () => errorResponse(404, 'File not found.');
-    if (!(kind in TABLES) || !UUID.test(id)) return notFound();
+    if (!Object.hasOwn(TABLES, kind) || !UUID.test(id)) return notFound();
 
     // RLS: only rows of the student's own college are visible.
     const { data: row, error } = await ctx.db
