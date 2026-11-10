@@ -57,27 +57,36 @@ export async function contactSeller(_prev: MarketState, formData: FormData): Pro
   return { ok: true };
 }
 
-export async function markSold(formData: FormData): Promise<void> {
+export async function markSold(_prev: MarketState, formData: FormData): Promise<MarketState> {
   const id = String(formData.get("listing_id") ?? "");
-  if (!UUID.test(id)) return;
+  if (!UUID.test(id)) return { error: GENERIC };
   const me = await getProfile();
-  if (!me) return;
-  const { error } = await me.db.from("listings").update({ status: "sold" }).eq("id", id).eq("seller_id", me.userId);
-  if (error) console.error("Mark sold failed:", error.message);
+  if (!me) return { error: GENERIC };
+  const { data, error } = await me.db
+    .from("listings")
+    .update({ status: "sold" })
+    .eq("id", id)
+    .eq("seller_id", me.userId)
+    .select("id");
+  if (error || !data || data.length === 0) {
+    console.error("Mark sold failed:", error?.message);
+    return { error: "Could not mark this item as sold. Try again." };
+  }
   revalidatePath("/market");
   revalidatePath(`/market/${id}`);
+  return { ok: true };
 }
 
-export async function deleteListing(formData: FormData): Promise<void> {
+export async function deleteListing(_prev: MarketState, formData: FormData): Promise<MarketState> {
   const id = String(formData.get("listing_id") ?? "");
-  if (!UUID.test(id)) return;
+  if (!UUID.test(id)) return { error: GENERIC };
   const me = await getProfile();
-  if (!me) return;
+  if (!me) return { error: GENERIC };
   const { data: row } = await me.db.from("listings").select("photo_path").eq("id", id).eq("seller_id", me.userId).maybeSingle();
-  const { error } = await me.db.from("listings").delete().eq("id", id).eq("seller_id", me.userId);
-  if (error) {
-    console.error("Delete listing failed:", error.message);
-    return;
+  const { data, error } = await me.db.from("listings").delete().eq("id", id).eq("seller_id", me.userId).select("id");
+  if (error || !data || data.length === 0) {
+    console.error("Delete listing failed:", error?.message);
+    return { error: "Could not delete this item. Try again." };
   }
   if (row?.photo_path) await me.db.storage.from("listing-photos").remove([row.photo_path as string]);
   revalidatePath("/market");

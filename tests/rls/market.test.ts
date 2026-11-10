@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createUserWithRole } from "../helpers/roles";
 import { adminClient, createCollege, createStudent, supabaseEnv } from "../helpers/supabase";
 import type { ToolContext } from "../../src/agent/types";
 import { allTools } from "../../src/modules";
@@ -126,6 +127,9 @@ describe("marketplace", { timeout: 60_000 }, () => {
     expect(out).toEqual([]);
     const inA = (await tool("search_listings").run({ query: "calculator" }, ctxFor(buyer, collegeA))) as any[];
     expect(inA.map((l) => l.id)).toEqual([listingId]);
+    const { data: sp } = await adminClient().from("profiles").select("full_name").eq("id", seller.id).single();
+    expect(sp?.full_name).toBeTruthy();
+    expect(inA[0].seller_name).toBe(sp!.full_name);
     expect(Object.keys(inA[0]).sort()).toEqual(["condition", "created_at", "id", "price_inr", "seller_name", "title"]);
   });
 
@@ -137,6 +141,15 @@ describe("marketplace", { timeout: 60_000 }, () => {
     const nasty = await tool("search_listings").run({ query: `"a & b : c | ! '` }, ctxFor(demo, "x"));
     expect(Array.isArray(nasty)).toBe(true);
     expect(tool("search_listings")).toMatchObject({ kind: "read", roles: ["student", "society_admin", "authority", "college_admin"] });
+  });
+
+  test("an authority cannot list or contact; an invalid status is refused", async () => {
+    const auth = await createUserWithRole(`au-${run}@ma-${run}.edu`, "authority");
+    expect((await auth.client.from("listings").insert({ title: "Staff item", price_inr: 5, condition: "new" })).error).not.toBeNull();
+    expect((await auth.client.rpc("contact_seller", { p_listing_id: listingId, p_message: MSG })).error?.code).toBe("42501");
+    expect((await seller.client.from("listings").update({ status: "reserved" }).eq("id", listingId)).error?.code).toBe("23514");
+    const { data } = await adminClient().from("listings").select("id").eq("college_id", collegeA).eq("title", "Staff item");
+    expect(data).toEqual([]);
   });
 
   test("seller deletes their listing", async () => {

@@ -4,9 +4,9 @@ import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { UUID } from "@/modules/academics/http";
 import { formatPrice } from "@/modules/market/queries";
-import { deleteListing, markSold } from "../actions";
 import { CONDITION_LABEL } from "../labels";
 import { ContactForm } from "./contact-form";
+import { SellerActions } from "./seller-actions";
 
 async function Detail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -43,22 +43,7 @@ async function Detail({ params }: { params: Promise<{ id: string }> }) {
       {l.description && <p className="whitespace-pre-wrap">{l.description}</p>}
 
       {isSeller ? (
-        <div className="flex flex-wrap gap-3">
-          {l.status === "available" && (
-            <form action={markSold}>
-              <input type="hidden" name="listing_id" value={l.id} />
-              <button type="submit" className="border border-zinc-800 px-3 py-1 text-sm">
-                Mark as sold
-              </button>
-            </form>
-          )}
-          <form action={deleteListing}>
-            <input type="hidden" name="listing_id" value={l.id} />
-            <button type="submit" className="border border-zinc-800 px-3 py-1 text-sm">
-              Delete
-            </button>
-          </form>
-        </div>
+        <SellerActions listingId={l.id} available={l.status === "available"} />
       ) : l.status === "available" && me.profile.role === "student" ? (
         <section aria-labelledby="contact" className="flex flex-col gap-2">
           <h2 id="contact" className="text-xl font-semibold">

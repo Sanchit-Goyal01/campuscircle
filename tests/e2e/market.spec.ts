@@ -23,7 +23,7 @@ const png = () =>
     .toBuffer();
 
 test("student lists an item with a photo, another student finds it and contacts the seller, seller sees a notification", async ({ page, browser, baseURL }) => {
-  await signUp(page, "Seller");
+  const seller = await signUp(page, "Seller");
   const title = `Drafting table ${Date.now()}`;
   await page.getByRole("link", { name: "Marketplace" }).click();
   await expect(page).toHaveURL(/\/market/);
@@ -36,7 +36,8 @@ test("student lists an item with a photo, another student finds it and contacts 
   await page.getByRole("button", { name: "List item" }).click();
   await expect(page).toHaveURL(/\/market\/[0-9a-f-]{36}$/, { timeout: 25_000 });
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  await expect(page.getByText("₹1,200")).toBeVisible();
+  await expect(page.getByText("₹1,200", { exact: true })).toBeVisible();
+  await expect(page.getByText(new RegExp(`Sold by ${seller}`))).toBeVisible();
   await expect(page.getByRole("img", { name: title })).toBeVisible();
   const { data } = await adminClient().from("listings").select("photo_path").eq("title", title).single();
   expect(data?.photo_path).toMatch(/\.jpg$/);
