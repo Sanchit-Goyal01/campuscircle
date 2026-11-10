@@ -7,6 +7,21 @@ const firstUserMessage = (messages: AgentMessage[]) => {
 };
 
 const say = (text: string): ModelTurn => ({ text, toolCalls: [] });
+const LETTERS = ['A', 'B', 'C', 'D'];
+// Fixed valid inputs for study help's single submit_* tool. Every citation is page 1.
+const SUBMIT_INPUTS: Record<string, unknown> = {
+  submit_answer: { answer: 'Scripted answer: normalisation removes redundancy.', pages: [1] },
+  submit_summary: { summary: 'Scripted summary of the note.', pages: [1] },
+  submit_quiz: {
+    questions: [0, 1, 2, 3, 0].map((answer_index, i) => ({
+      question: `Scripted question ${i + 1}?`,
+      options: LETTERS.map((l) => `Q${i + 1} option ${l}`),
+      answer_index,
+      page: 1,
+    })),
+  },
+};
+
 const call = (name: string, input: unknown): ModelTurn => ({
   text: '',
   toolCalls: [{ id: `scripted_${name}`, name, input }],
@@ -22,14 +37,19 @@ const READ_TOOLS: { keyword: string; tool: string; input: unknown; done: string 
 
 /**
  * Test double for end-to-end runs. Picks its turn by keyword in the first user
- * message. Order matters and is fixed: "fail" throws, then (Task 7: submit_*),
+ * message. Order matters and is fixed: "fail" throws, then a lone submit_* tool,
  * then weak, notes, papers, exam, plan, marks. The first match wins.
  */
 export function createScriptedModel(now: () => Date = () => new Date()): ModelClient {
   return {
-    async next({ messages }) {
+    async next({ messages, tools }) {
       const message = firstUserMessage(messages);
       if (message.includes('fail')) throw new Error('Scripted model failure');
+
+      // Study help offers exactly one submit_* tool and expects it to be called.
+      if (tools.length === 1 && tools[0].name.startsWith('submit_') && tools[0].name in SUBMIT_INPUTS) {
+        return call(tools[0].name, SUBMIT_INPUTS[tools[0].name]);
+      }
 
       // Tool results are in, so finish: returning another tool call would spin the loop.
       const read = READ_TOOLS.find((r) => message.includes(r.keyword));

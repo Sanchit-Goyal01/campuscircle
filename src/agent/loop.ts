@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { agentTimezone, agentToday } from '../lib/today';
 import { executeToolCall } from './executor';
+import { neutralise } from './fence';
 import type { AgentMessage, AgentTool, ModelClient, ToolContext, ToolOutcome, ToolSpec } from './types';
 
 export const MAX_TOOL_CALLS = 12;
@@ -20,7 +21,7 @@ type Status = 'completed' | 'stopped_limit' | 'failed';
 type RunResult = { runId: string; status: Status; reply: string };
 
 // Neutralise any closing fence in tool text so data cannot escape the <tool_data> block.
-const wrap = (s: string) => `<tool_data>${s.replace(/<\/(\s*)tool_data/gi, '&lt;/$1tool_data')}</tool_data>`;
+const wrap = (s: string) => `<tool_data>${neutralise(s, ['tool_data'])}</tool_data>`;
 const stringify = (v: unknown) => {
   try {
     return JSON.stringify(v) ?? 'null';

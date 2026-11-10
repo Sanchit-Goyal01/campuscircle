@@ -6,6 +6,7 @@ import { UUID } from "@/modules/academics/http";
 import { DeleteButton } from "../../delete-button";
 import { deleteNote } from "../../document-actions";
 import { noteStatusLabel } from "../status";
+import { StudyHelp } from "./StudyHelp";
 
 type Note = {
   id: string;
@@ -67,6 +68,8 @@ async function NoteDetail({ params }: { params: Promise<{ id: string }> }) {
           />
         )}
       </div>
+      {note.status === "ready" && <StudyHelp noteId={note.id} />}
+      {note.status === "not_searchable" && <p className="text-sm">This PDF has no text we can read.</p>}
     </div>
   );
 }

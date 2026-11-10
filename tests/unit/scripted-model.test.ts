@@ -46,6 +46,28 @@ describe("scripted model", () => {
     expect(items.map((i) => i.due_on)).toEqual(["2026-11-08", "2026-11-09", "2026-11-10"]);
   });
 
+  test("a lone submit_* tool is called with a valid payload, before every keyword but fail", async () => {
+    const tool = (name: string) => [{ name, description: "", input_schema: {} }];
+    const run = (name: string, m: string) =>
+      createScriptedModel().next({ system: "", tools: tool(name), messages: [user(m)] });
+    const answer = await run("submit_answer", "notes about my weak marks plan");
+    expect(answer.toolCalls[0]).toMatchObject({ name: "submit_answer", input: { pages: [1] } });
+    const quiz = (await run("submit_quiz", "quiz")).toolCalls[0].input as {
+      questions: { options: string[]; answer_index: number; page: number }[];
+    };
+    expect(quiz.questions).toHaveLength(5);
+    expect(quiz.questions.every((q) => q.options.length === 4 && q.answer_index >= 0 && q.answer_index <= 3 && q.page === 1)).toBe(true);
+    expect((await run("submit_summary", "x")).toolCalls[0].name).toBe("submit_summary");
+    await expect(run("submit_summary", "please fail")).rejects.toThrow();
+    // Two tools, or a non-submit tool, do not take this path.
+    const two = await createScriptedModel().next({
+      system: "",
+      tools: [...tool("submit_quiz"), ...tool("get_marks")],
+      messages: [user("hello")],
+    });
+    expect(two.toolCalls).toEqual([]);
+  });
+
   test('"fail" throws', async () => {
     await expect(next([user("please fail")])).rejects.toThrow();
   });
