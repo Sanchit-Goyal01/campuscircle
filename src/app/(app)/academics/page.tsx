@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { cgpa, sgpaBySemester, weakSubjects, type ResultRow } from "@/modules/academics/gpa";
+import { DeleteButton } from "./delete-button";
 import { deleteResult } from "./actions";
 import { MarksForm } from "./marks-form";
 
@@ -89,11 +90,7 @@ async function Academics() {
                           <td>{r.marks ?? "-"}</td>
                           <td>{r.grade_points ?? "-"}</td>
                           <td>
-                            <form action={deleteResult.bind(null, r.id)}>
-                              <button type="submit" className="underline" aria-label={`Delete ${r.subject} semester ${sem}`}>
-                                Delete
-                              </button>
-                            </form>
+                            <DeleteButton action={deleteResult.bind(null, r.id)} label={`Delete ${r.subject} semester ${sem}`} />
                           </td>
                         </tr>
                       ))}

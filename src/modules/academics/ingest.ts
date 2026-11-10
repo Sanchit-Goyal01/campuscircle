@@ -114,7 +114,9 @@ export async function ingestNote(
       p_chunks: rows,
     });
     if (insErr) throw new Error(insErr.message);
-  } catch {
+  } catch (e) {
+    // Message only: never the note text or the JWT.
+    console.error('Note indexing failed:', e instanceof Error ? e.message : 'unknown error');
     // The file stays so the student can delete the note and retry.
     return finish('failed');
   }

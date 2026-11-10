@@ -163,7 +163,7 @@ export function createSearchNotesTool(
   return {
     name: 'search_notes',
     description:
-      "Search the college's study notes by meaning. Returns excerpts with note title and page. Optionally limit to one subject by code or name.",
+      "Search the college's study notes by meaning. The query is a natural-language question or topic. Returns excerpts with note title and page. Optionally limit to one subject by its exact code or name, for example 'CS301' or 'DBMS'.",
     kind: 'read',
     roles: ['student', 'society_admin'],
     input: searchNotesInput,
@@ -209,7 +209,7 @@ const getPastPapersInput = z.strictObject({
 export const getPastPapers: AgentTool<z.infer<typeof getPastPapersInput>> = {
   name: 'get_past_papers',
   description:
-    "List the college's past exam papers, newest first, optionally for one subject (code or name) and year.",
+    "List the college's past exam papers, newest first, optionally for one subject and year. The subject must be an exact code or name, for example 'CS301' or 'DBMS'.",
   kind: 'read',
   roles: ['student', 'society_admin'],
   input: getPastPapersInput,
@@ -248,7 +248,7 @@ const daysBetween = (from: string, to: string) =>
 export const getTimetable: AgentTool<z.infer<typeof getTimetableInput>> = {
   name: 'get_timetable',
   description:
-    "Get the signed-in student's weekly classes and the exams in a date range (default: today to 30 days ahead). weekday is 1 = Monday to 7 = Sunday.",
+    "Get the signed-in student's weekly classes and exams. Weekly classes are always returned in full, whatever the date range. Only exams are filtered to the range (default: today to 30 days ahead); days_left is negative for exams already past. weekday is 1 = Monday to 7 = Sunday.",
   kind: 'read',
   roles: ['student', 'society_admin'],
   input: getTimetableInput,

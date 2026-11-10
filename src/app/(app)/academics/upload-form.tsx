@@ -6,6 +6,7 @@ import { EXAM_TYPES } from "@/modules/academics/exam-types";
 
 type Subject = { id: string; name: string };
 const field = "border border-zinc-400 px-2 py-1";
+const INDEX_FAILED = "We saved the file but could not make it searchable. Try again later.";
 const GENERIC = "Could not upload the file. Try again.";
 
 export function UploadForm({ kind, subjects }: { kind: "note" | "paper"; subjects: Subject[] }) {
@@ -23,12 +24,13 @@ export function UploadForm({ kind, subjects }: { kind: "note" | "paper"; subject
         method: "POST",
         body: new FormData(e.currentTarget),
       });
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      const body = (await res.json().catch(() => null)) as { error?: string; status?: string } | null;
       if (!res.ok) {
         setError(body?.error ?? GENERIC);
         return;
       }
       formRef.current?.reset();
+      if (kind === "note" && body?.status === "failed") setError(INDEX_FAILED);
       router.refresh();
     } catch {
       setError(GENERIC);

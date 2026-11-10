@@ -39,6 +39,14 @@ describe("gpa", () => {
     expect(weak[0]).toMatchObject({ subject: "C", semester: 1, marks: 40, average: 70 });
   });
 
+  test("weak subjects are sorted weakest first, ties by name", () => {
+    const rows = [
+      row(1, "Z", 3, 50, 6), row(1, "B", 3, 40, 4), row(1, "A", 3, 40, 4), row(1, "Top", 3, 100, 10),
+      row(1, "Top2", 3, 100, 10), row(1, "Top3", 3, 100, 10),
+    ];
+    expect(weakSubjects(rows).map((w) => w.subject)).toEqual(["A", "B", "Z"]);
+  });
+
   test("trend uses the latest two results", () => {
     const declining = weakSubjects([
       row(1, "X", 3, 50, 6),

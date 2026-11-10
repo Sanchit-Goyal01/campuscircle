@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getProfile } from "@/lib/supabase/server";
+import { UUID } from "@/modules/academics/http";
 
 export type SaveState = { error?: string; saved?: boolean };
 
@@ -58,11 +59,17 @@ export async function saveEntry(formData: FormData): Promise<SaveState> {
   return { saved: true };
 }
 
-export async function deleteEntry(id: string): Promise<void> {
+export type DeleteState = { error?: string };
+
+const DELETE_FAILED = "Could not delete this entry. Try again.";
+
+export async function deleteEntry(id: string, ..._rest: [DeleteState, FormData]): Promise<DeleteState> {
+  if (!UUID.test(id)) return { error: DELETE_FAILED };
   const me = await getProfile();
-  if (!me) return;
+  if (!me) return { error: DELETE_FAILED };
   // RLS limits deletes to the student's own rows.
   const { error } = await me.db.from("timetable_entries").delete().eq("id", id);
-  if (error) throw new Error("Could not delete this entry.");
+  if (error) return { error: DELETE_FAILED };
   revalidatePath("/academics/timetable");
+  return {};
 }

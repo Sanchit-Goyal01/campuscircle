@@ -39,6 +39,12 @@ async function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/academics/plans" className="text-sm underline">
             Study plans
           </Link>
+          <Link href="/academics/notes" className="text-sm underline">
+            Notes
+          </Link>
+          <Link href="/academics/papers" className="text-sm underline">
+            Past papers
+          </Link>
         </nav>
         <div className="md:mt-auto">
           <SignOutButton />

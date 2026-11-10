@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { agentToday } from "@/lib/today";
+import { DeleteButton } from "../delete-button";
 import { deleteEntry } from "./actions";
 import { TimetableForm } from "./timetable-form";
 import { WEEKDAYS } from "./weekdays";
@@ -46,11 +47,10 @@ async function Timetable() {
     .sort((a, b) => (a.exam_date! + a.start_time).localeCompare(b.exam_date! + b.start_time));
 
   const remove = (e: Entry) => (
-    <form action={deleteEntry.bind(null, e.id)}>
-      <button type="submit" className="underline" aria-label={`Delete ${label(e)} ${timeRange(e)}`}>
-        Delete
-      </button>
-    </form>
+    <DeleteButton
+      action={deleteEntry.bind(null, e.id)}
+      label={`Delete ${label(e)} ${timeRange(e)}`}
+    />
   );
 
   return (

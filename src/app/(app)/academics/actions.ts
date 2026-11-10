@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getProfile } from "@/lib/supabase/server";
+import { UUID } from "@/modules/academics/http";
 
 export type SaveState = { error?: string; saved?: boolean };
 
@@ -35,17 +36,24 @@ export async function saveResult(formData: FormData): Promise<SaveState> {
   if (error) {
     if (error.code === "23505") return { error: DUPLICATE };
     if (error.code === "23514") return { error: RANGE };
+    if (error.code === "42501") return { error: "That subject is not available to you." };
     return { error: GENERIC };
   }
   revalidatePath("/academics");
   return { saved: true };
 }
 
-export async function deleteResult(id: string): Promise<void> {
+export type DeleteState = { error?: string };
+
+const DELETE_FAILED = "Could not delete these marks. Try again.";
+
+export async function deleteResult(id: string, ..._rest: [DeleteState, FormData]): Promise<DeleteState> {
+  if (!UUID.test(id)) return { error: DELETE_FAILED };
   const me = await getProfile();
-  if (!me) return;
+  if (!me) return { error: DELETE_FAILED };
   // RLS limits deletes to the student's own rows.
   const { error } = await me.db.from("subject_results").delete().eq("id", id);
-  if (error) throw new Error("Could not delete marks.");
+  if (error) return { error: DELETE_FAILED };
   revalidatePath("/academics");
+  return {};
 }

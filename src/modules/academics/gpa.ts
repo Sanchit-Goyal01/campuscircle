@@ -59,5 +59,6 @@ export function weakSubjects(rows: ResultRow[]): {
     }
     out.push({ subject, semester: latest.semester, marks: latest.marks, average: round2(average), trend });
   }
-  return out;
+  // Weakest first (marks ascending, then name) so the page and get_weak_subjects agree.
+  return out.sort((a, b) => a.marks - b.marks || a.subject.localeCompare(b.subject));
 }
