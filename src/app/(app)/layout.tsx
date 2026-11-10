@@ -26,9 +26,12 @@ async function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex flex-1 flex-col md:flex-row">
       <aside className="flex items-center justify-between gap-4 border-b border-zinc-300 px-4 py-3 md:w-56 md:flex-col md:items-stretch md:justify-start md:border-b-0 md:border-r">
         <p className="font-semibold">CampusCircle</p>
-        <nav aria-label="Main">
+        <nav aria-label="Main" className="flex gap-4 md:flex-col md:gap-2">
           <Link href="/" className="text-sm underline">
             Home
+          </Link>
+          <Link href="/academics" className="text-sm underline">
+            Academics
           </Link>
         </nav>
         <div className="md:mt-auto">
