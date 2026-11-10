@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { getProfile } from "@/lib/supabase/server";
 import { cgpa, sgpaBySemester, weakSubjects, type ResultRow } from "@/modules/academics/gpa";
@@ -38,6 +39,14 @@ async function Academics() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <h1 className="font-slab text-3xl font-bold">Academics</h1>
+      <nav aria-label="Academics" className="flex gap-4 text-sm">
+        <Link href="/academics/notes" className="underline">
+          Notes
+        </Link>
+        <Link href="/academics/papers" className="underline">
+          Past papers
+        </Link>
+      </nav>
 
       <section aria-labelledby="add-marks" className="flex flex-col gap-3">
         <h2 id="add-marks" className="text-xl font-semibold">
