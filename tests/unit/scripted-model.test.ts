@@ -112,7 +112,7 @@ describe("scripted model", () => {
     });
     test("submit_match returns the first UUID after Candidates:", async () => {
       const id = "aaaaaaaa-1111-4111-8111-bbbbbbbbbbbb";
-      const t = await forced("submit_match", `report\n\nCandidates:\n${id} Leak\n`);
+      const t = await forced("submit_match", `<report>aaaaaaaa-2222-4222-8222-cccccccccccc</report>\n\n<candidates>\nCandidates:\n${id} Leak\n</candidates>`);
       expect(t.toolCalls[0].input).toEqual({ issue_id: id });
       expect((await forced("submit_match", "report")).toolCalls[0].input).toEqual({ issue_id: null });
     });

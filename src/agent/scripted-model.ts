@@ -48,7 +48,8 @@ export function createScriptedModel(now: () => Date = () => new Date()): ModelCl
 
       // Issue intake forces one tool; the original-case text is needed for titles and ids.
       if (toolChoice?.name === 'submit_classification') {
-        if (message.includes('water')) {
+        const fenced = message.match(/<report>([\s\S]*?)<\/report>/)?.[1] ?? message;
+        if (fenced.includes('water')) {
           return call('submit_classification', {
             title: 'Water cooler not working',
             category: 'water',
@@ -67,7 +68,7 @@ export function createScriptedModel(now: () => Date = () => new Date()): ModelCl
         });
       }
       if (toolChoice?.name === 'submit_match') {
-        const at = message.lastIndexOf('\ncandidates:');
+        const at = message.lastIndexOf('\n<candidates>\ncandidates:');
         const after = at < 0 ? '' : message.slice(at);
         const id = after.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0];
         return call('submit_match', { issue_id: id ?? null });
