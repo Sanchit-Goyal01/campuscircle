@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AgentMessage, ModelClient, ModelTurn, ToolSpec } from './types';
+import { createOpenAICompatModel, OPENAI_COMPAT_PROVIDERS, type OpenAICompatProvider } from './openai-compat';
 
 type ClaudeMessage = Anthropic.Beta.Messages.BetaMessage;
 type ClaudeMessageParam = Anthropic.Beta.Messages.BetaMessageParam;
@@ -158,8 +159,37 @@ function scriptedModel(): ModelClient {
   };
 }
 
+function compatModel(provider: OpenAICompatProvider, purpose: ModelPurpose): ModelClient {
+  const p = OPENAI_COMPAT_PROVIDERS[provider];
+  let client: ModelClient | undefined;
+  return {
+    next(args) {
+      // Checked per call so a missing key is a failed run, not a broken page.
+      const apiKey = process.env[p.keyEnv];
+      if (!apiKey) return Promise.reject(new Error(`${p.keyEnv} is not set`));
+      client ??= createOpenAICompatModel({
+        provider: p.label,
+        baseUrl: p.baseUrl,
+        apiKey,
+        model:
+          purpose === 'classifier'
+            ? process.env[p.classifierModelEnv] || p.defaultClassifierModel
+            : process.env[p.agentModelEnv] || p.defaultAgentModel,
+      });
+      return client.next(args);
+    },
+  };
+}
+
+function providerModel(purpose: ModelPurpose): ModelClient {
+  const provider = (process.env.AI_PROVIDER || 'claude').toLowerCase();
+  if (provider === 'claude') return realModel(purpose);
+  if (provider in OPENAI_COMPAT_PROVIDERS) return compatModel(provider as OpenAICompatProvider, purpose);
+  return { next: () => Promise.reject(new Error(`Unknown AI_PROVIDER "${provider}"`)) };
+}
+
 export function getModelClient(purpose: ModelPurpose = 'agent'): ModelClient {
-  if (process.env.AGENT_TEST_MODEL !== '1') return realModel(purpose);
+  if (process.env.AGENT_TEST_MODEL !== '1') return providerModel(purpose);
   if (process.env.NODE_ENV === 'production') {
     throw new Error('AGENT_TEST_MODEL=1 is set in production: refusing the scripted model');
   }
