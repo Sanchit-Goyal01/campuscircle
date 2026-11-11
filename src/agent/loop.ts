@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toPlainText } from './plain-text';
 import { agentTimezone, agentToday } from '../lib/today';
 import { executeToolCall } from './executor';
 import { neutralise } from './fence';
@@ -36,7 +37,7 @@ function describeOutcome(o: ToolOutcome): { output: string; isError: boolean } {
   if (o.status === 'ok') return { output: wrap(stringify(o.result)), isError: false };
   if (o.status === 'pending_approval') {
     return {
-      output: wrap(`Action queued (id ${o.actionId}) and waiting for student approval. It has NOT been done yet.`),
+      output: wrap('Action queued and waiting for student approval. It has NOT been done yet. The student sees an approval card, so do not mention any id.'),
       isError: false,
     };
   }
@@ -110,7 +111,7 @@ export async function runAgent(args: {
       return finish('failed', 'Sorry, something went wrong while I was working on that. Please try again.');
     }
 
-    if (turn.toolCalls.length === 0) return finish('completed', turn.text);
+    if (turn.toolCalls.length === 0) return finish('completed', toPlainText(turn.text));
 
     const remaining = max - used;
     const calls = turn.toolCalls.slice(0, Math.max(remaining, 0));

@@ -45,6 +45,16 @@ function toChatTool({ input_schema, ...tool }: ToolSpec) {
   return { type: 'function', function: { name: tool.name, description: tool.description, parameters } };
 }
 
+const MAX_RATE_LIMIT_RETRIES = 4;
+const MAX_WAIT_MS = 20_000;
+
+/** Reads Retry-After (seconds); falls back to 5 seconds, capped so a run never hangs. */
+export function retryAfterMs(header: string | null): number {
+  const seconds = header === null ? NaN : Number(header);
+  const ms = Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1000) + 250 : 5000;
+  return Math.min(ms, MAX_WAIT_MS);
+}
+
 function parseArguments(raw: string | undefined, name: string): unknown {
   if (!raw || raw.trim() === '') return {};
   try {
@@ -63,8 +73,10 @@ export function createOpenAICompatModel(deps: {
   apiKey: string;
   model: string;
   fetch?: FetchLike;
+  sleep?: (ms: number) => Promise<void>;
 }): ModelClient {
   const doFetch: FetchLike = deps.fetch ?? ((url, init) => fetch(url, init));
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const fail = (status: number | string, detail: unknown) => {
     // The provider's own message goes to the log; this one is stored in the run's trace.
     console.error(`${deps.provider} API request failed`, status, detail);
@@ -82,14 +94,21 @@ export function createOpenAICompatModel(deps: {
       if (args.toolChoice) request.tool_choice = { type: 'function', function: { name: args.toolChoice.name } };
 
       let res: Response;
-      try {
-        res = await doFetch(`${deps.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${deps.apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(request),
-        });
-      } catch (e) {
-        throw fail('no response', e instanceof Error ? e.message : e);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          res = await doFetch(`${deps.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${deps.apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+          });
+        } catch (e) {
+          throw fail('no response', e instanceof Error ? e.message : e);
+        }
+        // Free tiers cap tokens per minute, so a 429 usually clears within seconds.
+        if (res.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) break;
+        const waitMs = retryAfterMs(res.headers.get('retry-after'));
+        await res.body?.cancel().catch(() => {});
+        await sleep(waitMs);
       }
       if (!res.ok) throw fail(res.status, await res.text().catch(() => ''));
 
@@ -121,7 +140,7 @@ export const OPENAI_COMPAT_PROVIDERS = {
     agentModelEnv: 'GROQ_AGENT_MODEL',
     classifierModelEnv: 'GROQ_CLASSIFIER_MODEL',
     defaultAgentModel: 'openai/gpt-oss-120b',
-    defaultClassifierModel: 'llama-3.1-8b-instant',
+    defaultClassifierModel: 'openai/gpt-oss-20b',
   },
 } as const;
 

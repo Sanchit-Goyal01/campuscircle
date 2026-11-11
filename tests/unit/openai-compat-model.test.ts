@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createOpenAICompatModel, toChatMessages } from "@/agent/openai-compat";
+import { createOpenAICompatModel, retryAfterMs, toChatMessages } from "@/agent/openai-compat";
 import { getModelClient } from "@/agent/model";
 import type { AgentMessage } from "@/agent/types";
 
@@ -130,11 +130,11 @@ describe("createOpenAICompatModel", () => {
 
   test("an HTTP error gives the provider and status only", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const fetch = fakeFetch(new Response('{"error":{"message":"secret detail"}}', { status: 429 }));
+    const fetch = fakeFetch(new Response('{"error":{"message":"secret detail"}}', { status: 401 }));
     const err = await make(fetch)
       .next({ system: "s", messages: [user("hi")], tools: [] })
       .catch((e: Error) => e);
-    expect((err as Error).message).toBe("Groq API request failed (429)");
+    expect((err as Error).message).toBe("Groq API request failed (401)");
   });
 
   test("a network failure gives a clean message", async () => {
@@ -143,6 +143,46 @@ describe("createOpenAICompatModel", () => {
     await expect(make(fetch).next({ system: "s", messages: [user("hi")], tools: [] })).rejects.toThrow(
       "Groq API request failed (no response)",
     );
+  });
+});
+
+describe("rate limits", () => {
+  const limited = (retryAfter?: string) =>
+    new Response('{"error":{}}', { status: 429, headers: retryAfter ? { "retry-after": retryAfter } : {} });
+
+  test("waits for Retry-After and tries again after a 429", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const fetch = fakeFetch(limited("3"), reply({ content: "ok" }));
+    const model = createOpenAICompatModel({ provider: "Groq", baseUrl: BASE, apiKey: "k", model: "m", fetch: fetch as never, sleep });
+    const turn = await model.next({ system: "s", messages: [user("hi")], tools: [] });
+    expect(turn.text).toBe("ok");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(3250);
+  });
+
+  test("gives up after four retries with the 429 error", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const fetch = fakeFetch(limited(), limited(), limited(), limited(), limited());
+    const model = createOpenAICompatModel({ provider: "Groq", baseUrl: BASE, apiKey: "k", model: "m", fetch: fetch as never, sleep });
+    await expect(model.next({ system: "s", messages: [user("hi")], tools: [] })).rejects.toThrow("Groq API request failed (429)");
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
+
+  test("other errors are not retried", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sleep = vi.fn();
+    const fetch = fakeFetch(new Response("x", { status: 500 }));
+    const model = createOpenAICompatModel({ provider: "Groq", baseUrl: BASE, apiKey: "k", model: "m", fetch: fetch as never, sleep });
+    await expect(model.next({ system: "s", messages: [user("hi")], tools: [] })).rejects.toThrow("(500)");
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  test("retryAfterMs falls back to 5 seconds and caps at 20", () => {
+    expect(retryAfterMs(null)).toBe(5000);
+    expect(retryAfterMs("soon")).toBe(5000);
+    expect(retryAfterMs("1.5")).toBe(1750);
+    expect(retryAfterMs("600")).toBe(20000);
   });
 });
 
